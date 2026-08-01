@@ -56,7 +56,32 @@ Complete step-by-step guide for deploying **TakeMySkins Automator** to Render.co
 
 ---
 
-### Step 4: Configure Environment Variables
+### Step 4: Setup Redis + PostgreSQL (OPTIONAL but Recommended for 100% Persistence!)
+
+#### 4A: Add FREE Upstash Redis (Session Persistence)
+
+**Why?** Session survives dyno restart → No re-login needed!
+
+1. Go to https://upstash.com (FREE tier available)
+2. Sign up → Create Redis Database (FREE)
+3. Get connection string: `redis://default:password@host:port`
+4. Keep it handy
+
+#### 4B: Add FREE Render PostgreSQL
+
+**Why?** Long-term data storage (wins, stats) that never resets!
+
+1. In Render Dashboard → **Databases** → **New Database**
+2. Select PostgreSQL → FREE tier
+3. Name: `takemyskins-db`
+4. Region: Same as Web Service (Oregon)
+5. Render auto-creates `DATABASE_URL` environment variable ✓
+
+**Cost**: Both FREE forever!
+
+---
+
+### Step 5: Configure Environment Variables
 
 In Render Dashboard → Your Service → **Environment**:
 
@@ -66,6 +91,8 @@ HEALTHCHECK_PORT=8081
 SELF_PING_INTERVAL=600
 SCHEDULER_INTERVAL=21600
 PYTHONUNBUFFERED=1
+REDIS_URL=redis://default:PASSWORD@HOST:PORT  # From Upstash
+DATABASE_URL=                                    # Auto-set by Render PostgreSQL
 ```
 
 **Why each variable**:
@@ -74,21 +101,24 @@ PYTHONUNBUFFERED=1
 - `SELF_PING_INTERVAL` - Self-ping frequency (10 min default)
 - `SCHEDULER_INTERVAL` - Raffle checks (6 hours default)
 - `PYTHONUNBUFFERED` - Real-time logging in Render
+- `REDIS_URL` - Upstash connection (session survives restarts!) 🔴
+- `DATABASE_URL` - Render PostgreSQL (auto-set) 🐘
 
-No database URL needed! App auto-detects:
-- SQLite on Free tier ✅
-- PostgreSQL if added later ✅
+**Hybrid Database Mode** ✅:
+- `REDIS_URL` + `DATABASE_URL` → Perfect! Full persistence
+- `DATABASE_URL` only → PostgreSQL (no session persistence)
+- Neither → SQLite fallback (works but data resets on restart)
 
 ---
 
-### Step 5: Deploy
+### Step 6: Deploy
 
 **Option A: Automatic Deploy** (Recommended)
 
 When you push to GitHub:
 ```bash
 git add -A
-git commit -m "Deploy to Render"
+git commit -m "Deploy to Render with Redis + PostgreSQL"
 git push origin master
 ```
 
@@ -204,48 +234,94 @@ curl https://YOUR_SERVICE_NAME.onrender.com:8081/status
 
 Browser session stored in container.
 
-### Session Persistence (IMPORTANT - FREE Tier)
+### Session Persistence (IMPORTANT - With FREE Redis!)
 
-On Render Free tier:
-- Session lasts as long as dyno is running
-- If Render restarts dyno (rare) → Session lost
-- **Solution**: Just login again via QR (takes 1 minute) ✓
+**Old approach (SQLite only)**: Session lost on restart → Must re-login
 
-**Cost**: FREE - no paid upgrades needed!
+**NEW approach (WITH REDIS)**: Session persists! No re-login needed!
 
-**Note**: Render Free dyno restarts rarely (maybe once per week or less). When it happens:
-1. App starts
-2. You open web UI
-3. Click "Generează QR Code"
-4. Scan QR once
-5. Bot continues working
+#### If you add FREE Upstash Redis:
+- Session stored in Redis (30-day TTL)
+- Survives dyno restart automatically
+- **Zero re-logins needed!** ✓
+- **Cost: $0**
 
-This is **100% FREE** - no alternative needed!
+#### If no Redis (PostgreSQL only or SQLite):
+- Session lost on restart
+- Must QR login again (takes 1 minute) ✓
+
+**Recommendation**: Add Upstash Redis (3 clicks) → Never re-login again!
+
+---
+
+**Setup reminder**:
+1. Create FREE Upstash Redis
+2. Add `REDIS_URL` to environment variables in Render
+3. Redeploy
+4. Done! Sessions now persist! ✓
 
 ---
 
 ## 📊 Database Setup
 
-### Render Free: SQLite (Automatic) ✅ **FREE**
+### HYBRID MODE (Recommended): PostgreSQL + Redis ✅ **100% PERSISTENCE!**
 
-**No extra setup needed!**
+**You get the best of both:**
+
+| Database | Purpose | Cost | Data Survives Restart? |
+|----------|---------|------|------------------------|
+| **PostgreSQL (Render)** | Long-term stats, wins, raffles | **$0** | ✅ YES - permanent |
+| **Redis (Upstash)** | Session storage (fast) | **$0** | ✅ YES - 30 days |
+| **Result** | Both available = PERFECT! | **$0** | ✅ EVERYTHING persists |
+
+**Setup Steps**:
+1. Create FREE Upstash Redis → Get connection string
+2. Create FREE Render PostgreSQL → Auto-configured
+3. Add `REDIS_URL` + `DATABASE_URL` environment variables
+4. Done! Both auto-detected and used by `db_manager.py`
+
+**What this means**:
+- Browser session saved in Redis → Survives dyno restart
+- Stats/wins saved in PostgreSQL → Never lost
+- No data loss! No re-logins!
+- **Cost: $0 forever** ✓
+
+---
+
+### Single Database Options
+
+#### Option A: PostgreSQL Only (No Session Persistence)
+```
+✓ Long-term data persists
+✗ Session lost on restart → Must re-login
+❌ Not recommended
+```
+
+#### Option B: Render Free: SQLite (No Persistence)
+```
+✓ App starts immediately
+✗ Database resets on restart
+✗ Stats lost, session lost
+❌ Old approach (replaced)
+```
+
+**Recommendation: Use HYBRID MODE (PostgreSQL + Redis) for best results!**
+
+---
+
+### Verify Hybrid Setup Works
+
+In Render Dashboard → Logs:
 
 ```
-✓ App starts
-✓ Detects no PostgreSQL available
-✓ Falls back to SQLite (data.db)
-✓ Database works immediately
-✓ COST: $0
+[DB] 🔴 Connecting to Upstash Redis...
+[DB] ✅ Upstash Redis connected!
+[DB] 🐘 Connecting to Render PostgreSQL...
+[DB] ✅ Render PostgreSQL connected!
+[DB] ✅ HYBRID MODE: PostgreSQL + Redis (PERFECT!)
 ```
 
-**Important**: Database is stored in dyno memory
-- If dyno restarts → Database resets
-- Stats and history lost, but bot continues working
-- Re-login Steam once and you're good ✓
-
-This is **100% acceptable for Free Tier** - stats reset every few weeks but bot keeps running 24/7!
-
-**No paid database needed!**
+If you see this → Everything works perfectly! ✓
 
 ---
 
@@ -356,31 +432,61 @@ In Render Dashboard → Service → **Manual Deploy**
 
 ## 💰 Total Cost Breakdown
 
+### HYBRID MODE (Recommended):
+
 | Component | Cost |
 |-----------|------|
 | Render Free Web Service | **$0** ✓ |
-| SQLite Database | **$0** ✓ |
+| PostgreSQL Database (Render) | **$0** ✓ |
+| Upstash Redis (10K commands/day) | **$0** ✓ |
 | Cron-Job.org Keep-Alive | **$0** ✓ |
 | Steam Login (QR) | **$0** ✓ |
 | GitHub (free repo) | **$0** ✓ |
 | **TOTAL MONTHLY COST** | **$0** ✓ |
 
-**Yes, you can run this bot 100% FREE forever!** 🎉
+### What You Get:
+✅ Session persists across restarts (no re-logins!)  
+✅ All stats saved permanently  
+✅ 100% data persistence  
+✅ 24/7 running bot  
+✅ **ZERO COST** forever  
 
-No credit card needed. No hidden fees. No paid upgrades required.
+**Yes, you can run this bot 100% FREE forever with full persistence!** 🎉
+
+---
+
+### Legacy: SQLite Only (Not Recommended)
+
+| Component | Cost |
+|-----------|------|
+| Render Free Web Service | **$0** ✓ |
+| SQLite Database (in-memory) | **$0** ✓ |
+| Cron-Job.org Keep-Alive | **$0** ✓ |
+| **TOTAL MONTHLY COST** | **$0** ✓ |
+
+⚠️ **Limitation**: Data resets on dyno restart  
+⚠️ **Use only if you can't set up Redis**
 
 ---
 
 ## 🎉 Success Indicators
 
-After deployment, you should see:
+### With HYBRID MODE (PostgreSQL + Redis):
 
 ✅ Service showing **"Live"** in dashboard  
-✅ Logs show `[DB] ✓ Database schema initialized`  
+✅ Logs show `[DB] ✅ HYBRID MODE: PostgreSQL + Redis (PERFECT!)`  
 ✅ Web UI loads at `https://YOUR_SERVICE.onrender.com`  
 ✅ Health endpoint responds: `/healthz` → "ok"  
 ✅ Keep-alive pings every 10 min: `[KEEP-ALIVE]` in logs  
 ✅ Scheduler running: "Pornesc verificarea..." logs  
+✅ **Session saved to Redis (30 days, SURVIVES RESTARTS!)**  
+
+### With PostgreSQL Only:
+
+✅ Service running  
+✅ Logs show `[DB] ✅ Render PostgreSQL connected!`  
+✅ Web UI works  
+⚠️ Session lost on restart (must re-login)
 
 ---
 

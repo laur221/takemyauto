@@ -26,12 +26,33 @@ Deploy bot to Render Free in **5 minutes** with **zero cost**. ✓
    - Instance: **Free**
 6. Click **"Create Web Service"**
 
+### 2.5 Add Database (OPTIONAL - Recommended for Full Persistence!)
+
+**For ZERO data loss on restart:**
+
+1. **Upstash Redis** (Session persistence):
+   - Go to: https://upstash.com
+   - Sign up (free)
+   - Create Redis DB (FREE tier)
+   - Copy connection string: `redis://default:PASSWORD@HOST:PORT`
+
+2. **Render PostgreSQL** (Long-term data):
+   - In Render Dashboard → **Databases** → **New**
+   - Select PostgreSQL (FREE tier)
+   - Done! Auto-configured ✓
+
+3. Set Environment Variables in Render:
+   - Go to Service → **Environment**
+   - Add: `REDIS_URL=redis://default:PASSWORD@HOST:PORT`
+   - PostgreSQL: Auto-added as `DATABASE_URL` ✓
+
 ### 3. Wait for Deploy (2 min)
 
 Logs show:
 ```
-[DB] ✓ Database schema initialized
-Health server pornit pe portul 8081
+[DB] ✅ Upstash Redis connected!
+[DB] ✅ Render PostgreSQL connected!
+[DB] ✅ HYBRID MODE: PostgreSQL + Redis (PERFECT!)
 ```
 
 App is LIVE! ✓
@@ -74,20 +95,27 @@ Done! Your bot stays active 24/7.
 Bot now:
 - ✅ Checks raffles every 6 hours
 - ✅ Runs 24/7 on Render Free
-- ✅ Saves wins to SQLite
-- ✅ Tracks everything
+- ✅ Saves wins (PostgreSQL + Redis)
+- ✅ Session persists across restarts (with Redis)
+- ✅ Tracks everything permanently
 
 ---
 
-## 📱 What About Re-Login?
+## 📱 Session Persistence
 
-If Render restarts (rare, ~1x per week):
-1. Open web UI
-2. Click QR button
-3. Scan again (1 min)
-4. Done! Bot continues
+**With Upstash Redis (Recommended):**
+- Session saved automatically
+- Survives Render restart → NO re-login needed! ✓
+- Cost: $0
 
-**That's it!** No paid alternatives needed.
+**Without Redis:**
+- If Render restarts (rare, ~1x per week):
+  1. Open web UI
+  2. Click QR button
+  3. Scan again (1 min)
+  4. Done! Bot continues
+
+**Tip**: Add Redis (step 2.5) to avoid re-logins forever!
 
 ---
 
@@ -98,13 +126,16 @@ If Render restarts (rare, ~1x per week):
 No hidden fees. No credit card. Zero upgrades needed.
 
 ```
-Render Free:        $0
-Database (SQLite):  $0
-Keep-Alive (Free):  $0
-Steam Login (Free): $0
-─────────────────────
-TOTAL:              $0
+Render Free Web Service:      $0
+PostgreSQL Database (Render): $0
+Upstash Redis (10K/day):      $0
+Keep-Alive (cron-job.org):    $0
+Steam Login (Free QR):        $0
+─────────────────────────────────
+TOTAL:                        $0
 ```
+
+**EVERYTHING is FREE!**
 
 ---
 
