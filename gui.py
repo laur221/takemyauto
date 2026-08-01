@@ -247,7 +247,7 @@ def start_gui(bot_logic):
                     padding=30,
                     border_radius=RADIUS,
                     bgcolor=BG_ELEVATED,
-                    alignment=ft.alignment.center,
+                    # alignment removed (not in Flet 0.86)
                 )
 
             return ft.Column([
