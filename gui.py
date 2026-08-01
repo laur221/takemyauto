@@ -74,10 +74,21 @@ def start_gui(bot_logic):
         )
 
         # ── steam login in user's browser ───────────────────────────────
-        btn_steam = ft.ElevatedButton(
+        # Steam login: open in a new browser tab (manual step)
+        steam_btn = ft.ElevatedButton(
             "Deschide Steam Login",
-            on_click=lambda _: page.launch_url("https://store.steampowered.com/login/"),
+            on_click=lambda _: page.launch_url("https://store.steampowered.com/login/", web_window_name="_blank"),
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#1F6FEB"),
+        )
+
+        steam_link = ft.Text(
+            "sau deschide: store.steampowered.com/login",
+            size=12, color="#58A6FF",
+            spans=[ft.TextSpan(
+                "store.steampowered.com/login",
+                url="https://store.steampowered.com/login/",
+                style=ft.TextStyle(color="#58A6FF", decoration="underline"),
+            )],
         )
 
         # ── start check ─────────────────────────────────────────────────
@@ -230,7 +241,7 @@ def start_gui(bot_logic):
                             "Login Steam",
                             "Conecteaza-te prin QR sau deschide Steam in browser.",
                             ft.Column([
-                                ft.Row([btn_qr, btn_steam], spacing=10),
+                                ft.Row([btn_qr, steam_btn], spacing=10),
                                 qr_image,
                                 qr_status,
                             ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
