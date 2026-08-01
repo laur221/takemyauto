@@ -61,6 +61,13 @@ def start_gui(bot_logic):
         runtime_dot = ft.Container(width=8, height=8, border_radius=4, bgcolor="#94A3B8")
 
         def refresh_qr(qr_bytes):
+            if isinstance(qr_bytes, dict):
+                login_status.value = qr_bytes.get("error", "Nu am putut genera QR-ul Steam.")
+                login_status.color = "#F59E0B"
+                btn_qr.disabled = False
+                page.update()
+                return
+
             if qr_bytes:
                 try:
                     qr_image.src = None

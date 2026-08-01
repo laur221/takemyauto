@@ -393,27 +393,41 @@ class RaffleBot:
         
         Uses undetected-chromedriver mode to bypass Steam protections.
         """
+        def fail(message):
+            print(f"[QR] {message}")
+            refresh_ui_callback({"error": message})
+
         if not self._check_lock.acquire(blocking=False):
             print("[QR] Browserul este ocupat cu o alta verificare. Incearca din nou in cateva minute.")
-            refresh_ui_callback(None)
+            fail("Browserul este ocupat cu o verificare. Incearca din nou in cateva minute.")
             return
 
         os.makedirs(self.session_dir, exist_ok=True)
         temp_qr_path = os.path.join(tempfile.gettempdir(), f"steam_qr_{int(time.time())}.png")
         driver = None
         try:
-            driver = Driver(
-                uc=True,
-                user_data_dir=self.session_dir,
-                headless=True,
-                no_sandbox=True,
-                disable_gpu=True,
-                chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
-                             "--disable-extensions,--memory-pressure-off",
-            )
+            driver_options = {
+                "user_data_dir": self.session_dir,
+                "headless": True,
+                "no_sandbox": True,
+                "disable_gpu": True,
+                "use_chromium": True,
+                "chromium_arg": "--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
+                                "--disable-extensions,--memory-pressure-off",
+            }
+            chrome_bin = os.getenv("CHROME_BIN") or os.getenv("CHROMIUM_BIN")
+            if chrome_bin:
+                driver_options["binary_location"] = chrome_bin
+
+            try:
+                driver = Driver(uc=True, uc_subprocess=True, **driver_options)
+            except Exception as e:
+                print(f"[QR] UC Chrome failed, incerc fallback normal: {e}")
+                driver = Driver(uc=False, **driver_options)
+
             print("[QR] Accesez pagina de login Steam...")
             driver.get("https://store.steampowered.com/login/")
-            time.sleep(7)
+            time.sleep(10)
 
             qr_selectors = [
                 "div[class*='login_QR_'] canvas",
@@ -427,26 +441,36 @@ class RaffleBot:
             ]
 
             qr_found = False
-            for selector in qr_selectors:
-                try:
-                    if driver.is_element_visible(selector):
-                        print(f"[QR] QR gasit cu selector: {selector}")
-                        driver.save_element_screenshot(selector, temp_qr_path)
+            for _ in range(3):
+                for selector in qr_selectors:
+                    try:
+                        if driver.is_element_visible(selector):
+                            print(f"[QR] QR gasit cu selector: {selector}")
+                            driver.save_element_screenshot(selector, temp_qr_path)
 
-                        with open(temp_qr_path, "rb") as f:
-                            qr_bytes = f.read()
+                            with open(temp_qr_path, "rb") as f:
+                                qr_bytes = f.read()
 
-                        refresh_ui_callback(qr_bytes)
-                        qr_found = True
-                        print(f"[QR] Trimis pe UI: {len(qr_bytes)} bytes raw")
-                        break
-                except Exception as e:
-                    print(f"[QR] Selector esuat ({selector}): {e}")
-                    continue
+                            refresh_ui_callback(qr_bytes)
+                            qr_found = True
+                            print(f"[QR] Trimis pe UI: {len(qr_bytes)} bytes raw")
+                            break
+                    except Exception as e:
+                        print(f"[QR] Selector esuat ({selector}): {e}")
+                        continue
+                if qr_found:
+                    break
+                time.sleep(3)
 
             if not qr_found:
-                print("[QR] Niciun QR Code gasit - posibil deja logat")
-                refresh_ui_callback(None)
+                page_title = ""
+                current_url = ""
+                try:
+                    page_title = driver.title
+                    current_url = driver.current_url
+                except Exception:
+                    pass
+                fail(f"Steam nu a afisat QR-ul. Pagina: {page_title or 'necunoscuta'} ({current_url or 'no url'})")
                 return
 
             print("[QR] Astept scanarea QR-ului (60 sec timeout)...")
@@ -465,8 +489,7 @@ class RaffleBot:
                     print(f"[QR] Inca astept... ({attempt}/60)")
 
         except Exception as e:
-            print(f"[QR] Eroare critica: {str(e)}")
-            refresh_ui_callback(None)
+            fail(f"Eroare QR: {str(e)}")
         finally:
             if driver:
                 try:
