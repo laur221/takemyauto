@@ -5,6 +5,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 import threading
 import os
+import tempfile
 
 
 class RaffleBot:
@@ -392,8 +393,24 @@ class RaffleBot:
         
         Uses undetected-chromedriver mode to bypass Steam protections.
         """
-        driver = Driver(uc=True, user_data_dir=self.session_dir, headless=True)
+        if not self._check_lock.acquire(blocking=False):
+            print("[QR] Browserul este ocupat cu o alta verificare. Incearca din nou in cateva minute.")
+            refresh_ui_callback(None)
+            return
+
+        os.makedirs(self.session_dir, exist_ok=True)
+        temp_qr_path = os.path.join(tempfile.gettempdir(), f"steam_qr_{int(time.time())}.png")
+        driver = None
         try:
+            driver = Driver(
+                uc=True,
+                user_data_dir=self.session_dir,
+                headless=True,
+                no_sandbox=True,
+                disable_gpu=True,
+                chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
+                             "--disable-extensions,--memory-pressure-off",
+            )
             print("[QR] Accesez pagina de login Steam...")
             driver.get("https://store.steampowered.com/login/")
             time.sleep(7)
@@ -414,9 +431,9 @@ class RaffleBot:
                 try:
                     if driver.is_element_visible(selector):
                         print(f"[QR] QR gasit cu selector: {selector}")
-                        driver.save_element_screenshot(selector, "temp_qr.png")
+                        driver.save_element_screenshot(selector, temp_qr_path)
 
-                        with open("temp_qr.png", "rb") as f:
+                        with open(temp_qr_path, "rb") as f:
                             qr_bytes = f.read()
 
                         refresh_ui_callback(qr_bytes)
@@ -451,11 +468,13 @@ class RaffleBot:
             print(f"[QR] Eroare critica: {str(e)}")
             refresh_ui_callback(None)
         finally:
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
             try:
-                driver.quit()
+                os.remove(temp_qr_path)
             except Exception:
                 pass
-            try:
-                os.remove("temp_qr.png")
-            except Exception:
-                pass
+            self._check_lock.release()
