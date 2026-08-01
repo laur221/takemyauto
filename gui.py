@@ -249,7 +249,7 @@ def start_gui(bot_logic):
                                     size=12, color="#484F58"),
                         ], spacing=10),
                         extra=ft.IconButton(
-                            icon=ft.icons.REFRESH if hasattr(ft, "icons") else "refresh",
+                            icon='refresh',
                             icon_color="#8B9BB4",
                             on_click=refresh_stats,
                         ),
