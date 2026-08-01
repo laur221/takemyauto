@@ -225,10 +225,10 @@ def start_gui(bot_logic):
             page.update()
 
         def make_refresh_button():
-            return ft.IconButton(
-                content=ft.Icon(icon("REFRESH"), color="#CBD5E1"),
-                tooltip="Actualizeaza statistici",
+            return ft.ElevatedButton(
+                "Actualizeaza",
                 on_click=refresh_stats,
+                style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#334155"),
             )
 
         page.add(
