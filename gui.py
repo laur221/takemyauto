@@ -206,7 +206,6 @@ def start_gui(bot_logic):
                         ft.Icon(icon("INBOX"), color="#64748B", size=32),
                         ft.Text("Nu exista castiguri salvate inca.", color="#CBD5E1", size=14),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
-                    alignment=ft.alignment.center,
                     height=120,
                     border_radius=8,
                     bgcolor="#0F172A",
