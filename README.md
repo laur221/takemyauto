@@ -165,7 +165,54 @@ takemyskinauto/
 └──────────────────────────────────────────┘
 ```
 
-### Keep-Alive System
+## ⚙️ Architecture
+
+### Components
+
+```
+┌──────────────────────────────────────────┐
+│         Flet Web UI (Port 8080)          │
+│  ├─ QR Steam Login                       │
+│  ├─ Manual Check Button                  │
+│  ├─ Scheduler Controls                   │
+│  └─ Live Console Logs                    │
+└──────────────┬───────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────┐
+│    Flask-like HTTP Handler (app.py)      │
+│  ├─ /healthz (keep-alive)                │
+│  ├─ /ping (cron-job.org)                 │
+│  └─ /status (monitoring)                 │
+└──────────────┬───────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────┐
+│      RaffleBot Engine (engine.py)        │
+│  ├─ run_check() - Single check           │
+│  ├─ start_background_scheduler()         │
+│  ├─ get_steam_qr() - QR login            │
+│  └─ check_wins_internal() - Prize check  │
+└──────────────┬───────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────┐
+│    SeleniumBase Driver (Undetected)      │
+│  ├─ Chromium headless browser            │
+│  ├─ Anti-detection enabled               │
+│  └─ RAM-optimized for Render (512MB)     │
+└──────────────┬───────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────┐
+│   takemyskins.com (Target Website)       │
+│  ├─ Raffle discovery                     │
+│  ├─ Automated join                       │
+│  └─ Win tracking                         │
+└──────────────────────────────────────────┘
+```
+
+### Keep-Alive System (100% FREE)
 
 ```
 Internal Keep-Alive:
@@ -175,8 +222,8 @@ Internal Keep-Alive:
             └─> Dyno stays awake
 
 External Keep-Alive (Redundant):
-  cron-job.org (external service)
-    └─> HTTP GET /status every 10 min
+  cron-job.org (external service - GRATIS)
+    └─> HTTP GET /healthz every 10 min
         └─> Health server responds ✓
             └─> Double protection against spin-down
 ```
@@ -185,7 +232,7 @@ External Keep-Alive (Redundant):
 
 ## 🔐 Steam Authentication
 
-### Method 1: QR Code (Recommended)
+### Method: QR Code (FREE & Secure) ✅
 
 ```
 1. Click "Generează QR Code Steam"
@@ -196,18 +243,17 @@ External Keep-Alive (Redundant):
 6. Bot can run headless
 ```
 
-**Pros**: Secure, no password, session persistence  
-**Cons**: Manual step required per restart
+**Secure**: No password needed, QR only  
+**Free**: No paid options needed  
+**Session**: Lasts until dyno restart (rare)  
 
-### Method 2: Persistent Disk ($5/month)
+When dyno restarts (~once per week or less):
+- Session lost (free tier limitation)
+- Just click QR button again
+- Takes 1 minute to re-login
+- Bot continues working
 
-Add disk to Render:
-- Mount: `/var/data`
-- Update `engine.py` line 10: `self.session_dir = "/var/data/user_session"`
-- Deploy & login once → session survives restarts forever
-
-**Pros**: Fully automated, zero manual intervention  
-**Cons**: $5/month extra cost
+**No paid persistent disk needed!** This is acceptable for free tier.
 
 ---
 
