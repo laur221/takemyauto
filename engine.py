@@ -300,6 +300,12 @@ class RaffleBot:
             log("[SCHEDULER] Background scheduler started "
                 f"(interval: {interval_seconds} seconds)")
             while not self._scheduler_stop_event.is_set():
+                local_session_exists = os.path.exists(os.path.join(self.session_dir, "Default"))
+                if not self.db.session_exists() and not local_session_exists:
+                    log("[SCHEDULER] Nu exista sesiune salvata. Astept login Steam inainte de verificari automate.")
+                    self._scheduler_stop_event.wait(interval_seconds)
+                    continue
+
                 log("Pornesc verificarea automata a raflelor (Background Task)...")
                 try:
                     self.run_check(is_headless=is_headless, log_func=log_func)

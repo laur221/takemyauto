@@ -1,4 +1,5 @@
-﻿import flet as ft
+import base64
+import flet as ft
 import threading
 
 
@@ -62,7 +63,8 @@ def start_gui(bot_logic):
         def refresh_qr(qr_bytes):
             if qr_bytes:
                 try:
-                    qr_image.src = qr_bytes
+                    qr_image.src = None
+                    qr_image.src_base64 = base64.b64encode(qr_bytes).decode("ascii")
                     qr_image.visible = True
                     login_status.value = "Scaneaza QR-ul cu Steam Mobile"
                     login_status.color = "#22C55E"
