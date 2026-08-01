@@ -19,7 +19,7 @@ def start_gui(bot_logic):
 
         # Elementul care va afișa QR Code-ul
         qr_image = ft.Image(
-            src_base64="",
+            src="",
             width=250,
             height=250,
             visible=False,
@@ -29,11 +29,12 @@ def start_gui(bot_logic):
 
         login_status = ft.Text("Așteptare solicitare login...", size=12)
 
-        def refresh_qr(qr_base64):
+        def refresh_qr(qr_bytes):
             # Această funcție va fi apelată când bot-ul generează un QR nou
-            if qr_base64:
+            # In Flet 0.86+, Image.src accepts raw bytes directly
+            if qr_bytes:
                 try:
-                    qr_image.src_base64 = qr_base64
+                    qr_image.src = qr_bytes  # bytes -> direct display, no base64 needed
                     qr_image.visible = True
                     login_status.value = "✓ Scanează QR-ul cu aplicația Steam Mobile"
                     login_status.color = "green400"

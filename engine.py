@@ -1,7 +1,6 @@
 from seleniumbase import Driver
 import time
 import threading
-import base64
 import os
 
 
@@ -229,15 +228,14 @@ class RaffleBot:
                         print(f"[QR] QR găsit cu selector: {selector}")
                         driver.save_element_screenshot(selector, "temp_qr.png")
                         
-                        # Citim și encodez în base64
+                        # Citim raw bytes - Flet 0.86+ accepts bytes directly in Image.src
                         with open("temp_qr.png", "rb") as f:
                             qr_bytes = f.read()
-                            qr_base64 = base64.b64encode(qr_bytes).decode("ascii")
                         
-                        # Transmit pe UI
-                        refresh_ui_callback(qr_base64)
+                        # Transmit pe UI (raw bytes, no base64 needed)
+                        refresh_ui_callback(qr_bytes)
                         qr_found = True
-                        print(f"[QR] Trimis pe UI: {len(qr_base64)} bytes base64")
+                        print(f"[QR] Trimis pe UI: {len(qr_bytes)} bytes raw")
                         break
                 except Exception as e:
                     print(f"[QR] Selector eșuat ({selector}): {e}")
