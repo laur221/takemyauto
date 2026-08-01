@@ -77,7 +77,7 @@ def start_gui(bot_logic):
         # Steam login: open in a new browser tab (manual step)
         steam_btn = ft.ElevatedButton(
             "Deschide Steam Login",
-            on_click=lambda _: page.launch_url("https://store.steampowered.com/login/", web_window_name="_blank"),
+            on_click=lambda _: page.launch_url("https://store.steampowered.com/login/"),
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#1F6FEB"),
         )
 
