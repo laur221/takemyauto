@@ -52,8 +52,6 @@ class HealthHandler(BaseHTTPRequestHandler):
 
 
 def start_internal_health_server(port):
-    # Bind to 127.0.0.1 ONLY - internal use, not exposed to Render
-    # Render should route traffic to Flet's port, not here
     server = ThreadingHTTPServer(("127.0.0.1", port), HealthHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"Health server pornit pe 127.0.0.1:{port} (/healthz) - internal only.")
@@ -74,6 +72,14 @@ def keep_alive_self_ping(target_url, interval_seconds=600):
         time.sleep(interval_seconds)
 
 
+def delayed_scheduler_start(bot, delay=120, interval_seconds=21600):
+    """Start scheduler after delay so Flet initializes first (avoids OOM on 512MB)."""
+    print(f"[SCHEDULER] Waiting {delay}s before first check (RAM optimization)...")
+    time.sleep(delay)
+    print(f"[SCHEDULER] Delay done, starting background scheduler now.")
+    bot.start_background_scheduler(interval_seconds=interval_seconds, is_headless=True)
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
 
@@ -84,8 +90,14 @@ if __name__ == "__main__":
     SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", 600))
     threading.Thread(target=keep_alive_self_ping, args=(self_ping_url, SELF_PING_INTERVAL), daemon=True).start()
 
-    bot.start_background_scheduler(interval_seconds=21600, is_headless=True)
+    # Delay scheduler: Flet + SeleniumBase at once = OOM on 512MB Render Free
+    SCHEDULER_DELAY = int(os.getenv("SCHEDULER_DELAY", 120))
+    threading.Thread(
+        target=delayed_scheduler_start,
+        args=(bot, SCHEDULER_DELAY, 21600),
+        daemon=True,
+    ).start()
 
-    # Flet on 0.0.0.0:PORT - this is what Render will route traffic to
+    # Flet on 0.0.0.0:PORT
     print(f"Flet web UI starting on 0.0.0.0:{port}")
     ft.app(target=main_func, view=ft.AppView.WEB_BROWSER, port=port)
