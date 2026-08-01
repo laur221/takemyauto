@@ -71,12 +71,14 @@ curl http://localhost:8081/status
 
 **TOTAL: $0/month FOREVER** ✓
 
-- Render Free Tier: $0
-- SQLite Database: $0
+**HYBRID Setup** (Recommended):
+- Render Free Web Service: $0
+- Render PostgreSQL (FREE tier, 256MB): $0
+- Upstash Redis (FREE tier, 10K cmds/day): $0
 - Cron-Job.org Keep-Alive: $0
 - Steam QR Login: $0
 
-No credit card needed. No hidden fees. No upgrades required.
+**Total: $0 FOREVER** - No credit card needed, no hidden fees, no upgrades required.
 
 ---
 
@@ -84,25 +86,29 @@ No credit card needed. No hidden fees. No upgrades required.
 
 ```
 takemyskinauto/
-├── app.py                    # Web server + health endpoints
-├── engine.py                 # Bot logic + background scheduler
-├── gui.py                    # Flet web interface
-├── db_manager.py             # Database management (auto-fallback)
-├── requirements.txt          # Python dependencies
+├── app.py                       # Web server + health endpoints
+├── engine.py                    # Bot logic + background scheduler
+├── gui.py                       # Flet web interface
+├── db_manager.py                # Hybrid PostgreSQL + Redis database
+├── requirements.txt             # Python dependencies
 │
-├── README.md                 # This file
-├── DATABASE.md               # Database configuration guide
-├── KEEP_ALIVE.md             # Render spin-down prevention guide
-├── README_RENDER.md          # Steam session management on Render Free
-├── LOCAL_TEST_GUIDE.md       # Local testing procedures
-├── DEPLOYMENT_CHECKLIST.md   # Pre/post deployment steps
+├── README.md                    # Project overview & architecture
+├── QUICK_START.md               # ⚡ 5-minute deployment guide (START HERE!)
+├── RENDER_DEPLOYMENT.md         # Detailed Render setup + troubleshooting
+├── HYBRID_DATABASE_GUIDE.md     # 🔗 PostgreSQL + Redis persistence system
+├── DEPLOYMENT_VERIFICATION.md   # ✅ Post-deployment verification checklist
+├── KEEP_ALIVE.md                # Render spin-down prevention strategies
+├── README_RENDER.md             # Steam session management on free tier
+├── LOCAL_TEST_GUIDE.md          # Local testing procedures
+├── DATABASE.md                  # Database configuration guide
+├── DEPLOYMENT_CHECKLIST.md      # Pre/post deployment steps
 │
-├── Dockerfile                # Container for Render deployment
-├── render.yaml               # Render auto-configuration
-├── user_session/             # Browser session cache (Steam cookies)
-├── downloaded_files/         # Raffle data storage
-├── data.db                   # SQLite database (auto-created, Render Free)
-└── .git/                     # Version control
+├── Dockerfile                   # Container for Render deployment
+├── render.yaml                  # Render auto-configuration
+├── user_session/                # Browser session cache (Steam cookies)
+├── downloaded_files/            # Raffle data storage
+├── .git/                        # Version control
+└── (no data.db - uses PostgreSQL + Redis!)
 ```
 
 ---
@@ -228,21 +234,27 @@ External Keep-Alive (Redundant):
 2. QR appears in browser
 3. Scan with Steam Mobile app
 4. Login confirmed
-5. Session saved to disk
+5. Session saved to disk + Redis
 6. Bot can run headless
 ```
 
 **Secure**: No password needed, QR only  
 **Free**: No paid options needed  
-**Session**: Lasts until dyno restart (rare)  
 
-When dyno restarts (~once per week or less):
-- Session lost (free tier limitation)
-- Just click QR button again
-- Takes 1 minute to re-login
+### Session Persistence with HYBRID Database
+
+**With PostgreSQL + Redis (Recommended)**:
+- Session stored in Redis automatically ✅
+- Survives dyno restart (30-day TTL) ✅
+- **NO re-login needed!** ✓
+- Also backed up to PostgreSQL
+
+**Without Redis (PostgreSQL only)**:
+- Session lost on dyno restart (rare, ~1x/week)
+- Just click QR button again (takes 1 minute)
 - Bot continues working
 
-**No paid persistent disk needed!** This is acceptable for free tier.
+**Setup**: See `QUICK_START.md` step 2.5 for easy Redis setup (3 clicks!)
 
 ---
 
@@ -350,14 +362,27 @@ Am găsit 12 rafle pe pagină.
 
 ## 📖 Full Documentation
 
-- **QUICK_START.md** ⚡ - Deploy in 5 minutes (START HERE!)
+**Getting Started**:
+- **QUICK_START.md** ⚡ - Deploy in 5 minutes with Upstash Redis (START HERE!)
+- **RENDER_DEPLOYMENT.md** - Complete Render setup with PostgreSQL + Redis hybrid
+
+**Core Guides**:
 - **README.md** - Project overview & architecture (this file)
-- **RENDER_DEPLOYMENT.md** - Detailed Render setup & troubleshooting
-- **KEEP_ALIVE.md** - Keep-alive strategies (prevent spin-down)
-- **README_RENDER.md** - Steam session management on free tier
-- **LOCAL_TEST_GUIDE.md** - Local testing procedures
-- **DATABASE.md** - Database configuration (SQLite/PostgreSQL)
+- **HYBRID_DATABASE_GUIDE.md** 🔗 - Explains PostgreSQL + Redis persistence system
+- **DEPLOYMENT_VERIFICATION.md** ✅ - Verify deployment is working (post-deploy checklist)
+
+**Advanced Guides**:
+- **KEEP_ALIVE.md** - Keep-alive strategies & troubleshooting (prevent spin-down)
+- **README_RENDER.md** - Steam session management on Render free tier
+- **LOCAL_TEST_GUIDE.md** - Local development & testing procedures
+- **DATABASE.md** - Database configuration & fallback modes
 - **DEPLOYMENT_CHECKLIST.md** - Pre/post deployment verification
+
+**Quick Navigation**:
+- New to the project? → `QUICK_START.md` ⚡
+- Want full details? → `RENDER_DEPLOYMENT.md`
+- Troubleshooting? → Check relevant guide + `README_RENDER.md`
+- Verify setup works? → `DEPLOYMENT_VERIFICATION.md` ✅
 
 ---
 
@@ -376,13 +401,15 @@ MIT License - See LICENSE file
 ## ⭐ Key Takeaways
 
 ✅ **Free hosting** on Render (no credit card)  
+✅ **100% persistent data** with PostgreSQL + Redis hybrid  
+✅ **Session survives restarts** (30-day Redis persistence)  
 ✅ **24/7 uptime** with keep-alive pings  
 ✅ **Secure login** with Steam QR codes  
 ✅ **Automated raffles** every 6 hours  
 ✅ **Web interface** accessible anytime  
 ✅ **Fully documented** with troubleshooting  
 
-**Ready to deploy?** → See `DEPLOYMENT_CHECKLIST.md` 🚀
+**Ready to deploy?** → See `QUICK_START.md` ⚡ (5 minutes) or `RENDER_DEPLOYMENT.md` (detailed)
 
 ---
 
