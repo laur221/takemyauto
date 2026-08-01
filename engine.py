@@ -8,6 +8,7 @@ import secrets
 import time
 import threading
 import os
+import tempfile
 import urllib.parse
 
 
@@ -431,30 +432,42 @@ class RaffleBot:
             time.sleep(10)
 
             qr_selectors = [
-                "div[class*='login_QR_'] canvas",
-                "div[class*='qr_code'] img",
-                "img[class*='qrcode']",
+                "div[style*='--qr-bright-color']",
+                "img[src^='blob:']",
+                "xpath://label[contains(text(),'QR')]/following-sibling::div",
+                "xpath://label[contains(text(),'QR')]/..",
+                "div[class*='login_QR_']",
+                "div[class*='qr_code']",
+                "div[class*='QR']",
                 "canvas[class*='qr']",
-                "div[class*='QR'] img",
-                "div[class*='qrcode'] canvas",
                 "img[src*='qr']",
                 "canvas",
+                "svg",
             ]
 
             qr_found = False
             for _ in range(3):
                 for selector in qr_selectors:
                     try:
-                        if driver.is_element_visible(selector):
-                            print(f"[QR] QR gasit cu selector: {selector}")
-                            driver.save_element_screenshot(selector, temp_qr_path)
+                        if selector.startswith("xpath:"):
+                            xpath_val = selector.replace("xpath:", "")
+                            elems = driver.find_elements("xpath", xpath_val)
+                        else:
+                            elems = driver.find_elements("css selector", selector)
 
-                            with open(temp_qr_path, "rb") as f:
-                                qr_bytes = f.read()
+                        for el in elems:
+                            if el.is_displayed():
+                                print(f"[QR] QR gasit cu selector: {selector}")
+                                el.screenshot(temp_qr_path)
 
-                            refresh_ui_callback(qr_bytes)
-                            qr_found = True
-                            print(f"[QR] Trimis pe UI: {len(qr_bytes)} bytes raw")
+                                with open(temp_qr_path, "rb") as f:
+                                    qr_bytes = f.read()
+
+                                refresh_ui_callback(qr_bytes)
+                                qr_found = True
+                                print(f"[QR] Trimis pe UI: {len(qr_bytes)} bytes raw")
+                                break
+                        if qr_found:
                             break
                     except Exception as e:
                         print(f"[QR] Selector esuat ({selector}): {e}")

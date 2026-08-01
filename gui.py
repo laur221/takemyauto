@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import flet as ft
 import threading
 import datetime
@@ -48,13 +48,14 @@ def start_gui(bot_logic):
                 return
             if qr_bytes:
                 try:
-                    qr_image.src = None
-                    qr_image.src_base64 = base64.b64encode(qr_bytes).decode()
+                    b64_str = base64.b64encode(qr_bytes).decode("utf-8")
+                    qr_image.src = f"data:image/png;base64,{b64_str}"
+                    qr_image.src_base64 = b64_str
                     qr_image.visible = True
-                    qr_status.value = "Scaneaza codul QR cu Steam Mobile"
+                    qr_status.value = "Scaneaza codul QR cu aplicatia Steam Mobile"
                     qr_status.color = "#3FB950"
                 except Exception as e:
-                    qr_status.value = f"Eroare: {e}"
+                    qr_status.value = f"Eroare afisare QR: {e}"
                     qr_status.color = "#F85149"
             else:
                 qr_status.value = "QR indisponibil - incearca din nou"
@@ -77,32 +78,25 @@ def start_gui(bot_logic):
         )
 
         # ── steam login in user's browser ───────────────────────────────
-        # Steam login with debug feedback
         def on_steam_click(e):
-            steam_status.value = "Am apasat butonul Steam Login - incerc page.launch_url()..."
-            steam_status.color = "#58A6FF"
-            log("BUTON: Steam Login apasat - incerc sa deschid browserul")
-            page.update()
-            try:
-                page.launch_url("https://store.steampowered.com/login/")
-                steam_status.value = "launch_url() apelat. Verifica daca s-a deschis un tab nou."
-                steam_status.color = "#3FB950"
-                log("BUTON: launch_url() apelat cu succes")
-            except Exception as ex:
-                steam_status.value = f"Eroare launch_url: {ex}"
-                steam_status.color = "#F85149"
-                log(f"BUTON: EROARE launch_url: {ex}")
+            steam_status.value = "Deschid Steam Login intr-un tab nou..."
+            steam_status.color = "#3FB950"
+            log("BUTON: Steam Login apasat - deschidere tab nou")
             page.update()
 
         steam_btn = ft.ElevatedButton(
             "Deschide Steam Login",
+            url="https://store.steampowered.com/login/",
+            url_target="_blank",
             on_click=on_steam_click,
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#1F6FEB"),
         )
 
-        steam_link = ft.Text(
-            "stiam store.steampowered.com/login si logheaza-te manual",
-            size=12, color="#8B949E",
+        tms_btn = ft.ElevatedButton(
+            "Deschide TakeMySkins",
+            url="https://takemyskins.com/",
+            url_target="_blank",
+            style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#238636"),
         )
 
         # ── start check ─────────────────────────────────────────────────
@@ -257,7 +251,7 @@ def start_gui(bot_logic):
                             "Login Steam",
                             "Conecteaza-te prin QR sau deschide Steam in browser.",
                             ft.Column([
-                                ft.Row([btn_qr, steam_btn], spacing=10),
+                                ft.Row([btn_qr, steam_btn, tms_btn], spacing=10, wrap=True),
                                 steam_status,
                                 qr_image,
                                 qr_status,
