@@ -24,7 +24,7 @@ def start_gui(bot_logic):
             height=250,
             visible=False,
             border_radius=15,
-            fit=ft.ImageFit.CONTAIN
+            fit="contain"
         )
 
         login_status = ft.Text("Așteptare solicitare login...", size=12)
