@@ -82,20 +82,21 @@ def start_gui(bot_logic):
             steam_status.value = "Deschid Steam Login intr-un tab nou..."
             steam_status.color = "#3FB950"
             log("BUTON: Steam Login apasat - deschidere tab nou")
+            page.launch_url("https://store.steampowered.com/login/")
             page.update()
 
         steam_btn = ft.ElevatedButton(
             "Deschide Steam Login",
-            url="https://store.steampowered.com/login/",
-            url_target="_blank",
             on_click=on_steam_click,
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#1F6FEB"),
         )
 
+        def on_tms_click(e):
+            page.launch_url("https://takemyskins.com/")
+
         tms_btn = ft.ElevatedButton(
             "Deschide TakeMySkins",
-            url="https://takemyskins.com/",
-            url_target="_blank",
+            on_click=on_tms_click,
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#238636"),
         )
 
