@@ -36,6 +36,10 @@ class RaffleBot:
             log("Se deschide browserul...")
             driver.get("https://takemyskins.com/")
 
+            # Try to restore session from Redis (survives restart!)
+            self.restore_session_from_redis(driver, log)
+            time.sleep(3)
+
             if not is_headless:
                 log("Aștept să te loghezi manual...")
                 return "Login Manual Deschis"
@@ -90,6 +94,20 @@ class RaffleBot:
 
             # După ce terminăm raflele, verificăm și câștigurile
             self.check_wins_internal(driver, log)
+
+            # Salvez sesiunea în Redis (SURVIVES RESTART!)
+            try:
+                session_data = {
+                    "cookies": driver.get_cookies(),
+                    "localStorage": driver.execute_script("return Object.keys(localStorage);"),
+                    "sessionStorage": driver.execute_script("return Object.keys(sessionStorage);"),
+                    "last_check": time.time(),
+                    "status": "logged_in"
+                }
+                self.db.save_session(session_data)
+                log("[SESSION] ✅ Session saved to Redis (survives restart!)")
+            except Exception as e:
+                log(f"[SESSION] ⚠️ Could not save session: {e}")
 
             return "Gata!"
         except Exception as e:
@@ -155,6 +173,31 @@ class RaffleBot:
             driver.switch_to.window(driver.window_handles[-1])
             driver.close()
         driver.switch_to.window(driver.window_handles[0])
+
+    def restore_session_from_redis(self, driver, log):
+        """Restore browser session from Redis if available (NO re-login needed!)
+        
+        Survives dyno restart - persistent across 30 days!
+        """
+        try:
+            session_data = self.db.get_session()
+            if session_data:
+                # Restore cookies
+                if "cookies" in session_data:
+                    for cookie in session_data["cookies"]:
+                        try:
+                            driver.add_cookie(cookie)
+                        except:
+                            pass  # Some cookies may fail, that's OK
+                
+                log("[SESSION] ✅ Restored from Redis - NO re-login needed!")
+                return True
+            else:
+                log("[SESSION] ℹ️ No saved session in Redis")
+                return False
+        except Exception as e:
+            log(f"[SESSION] ⚠️ Could not restore session: {e}")
+            return False
 
     def get_steam_qr(self, refresh_ui_callback):
         """Generează QR Code Steam și îl trimite pe web în format base64.
