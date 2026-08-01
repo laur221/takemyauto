@@ -412,6 +412,7 @@ class RaffleBot:
                 "no_sandbox": True,
                 "disable_gpu": True,
                 "use_chromium": True,
+                "page_load_strategy": "eager",
                 "chromium_arg": "--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
                                 "--disable-extensions,--memory-pressure-off",
             }
@@ -419,13 +420,10 @@ class RaffleBot:
             if chrome_bin:
                 driver_options["binary_location"] = chrome_bin
 
-            try:
-                driver = Driver(uc=True, uc_subprocess=True, **driver_options)
-            except Exception as e:
-                print(f"[QR] UC Chrome failed, incerc fallback normal: {e}")
-                driver = Driver(uc=False, **driver_options)
+            driver = Driver(uc=False, **driver_options)
 
             print("[QR] Accesez pagina de login Steam...")
+            driver.set_page_load_timeout(30)
             driver.get("https://store.steampowered.com/login/")
             time.sleep(10)
 
