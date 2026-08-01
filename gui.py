@@ -74,21 +74,21 @@ def start_gui(bot_logic):
         )
 
         # ── steam login in user's browser ───────────────────────────────
-        # Steam login: open in a new browser tab (manual step)
+        # Steam login: clickable link (most reliable cross-browser)
+        steam_link = ft.Text(
+            spans=[ft.TextSpan(
+                "Deschide Steam Login in browser nou",
+                ft.TextStyle(decoration="underline", color="#58A6FF", weight="w600"),
+                url="https://store.steampowered.com/login/",
+            )],
+            size=14,
+        )
+
+        # Button fallback
         steam_btn = ft.ElevatedButton(
             "Deschide Steam Login",
             on_click=lambda _: page.launch_url("https://store.steampowered.com/login/"),
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#1F6FEB"),
-        )
-
-        steam_link = ft.Text(
-            "sau deschide: store.steampowered.com/login",
-            size=12, color="#58A6FF",
-            spans=[ft.TextSpan(
-                "store.steampowered.com/login",
-                url="https://store.steampowered.com/login/",
-                style=ft.TextStyle(color="#58A6FF", decoration="underline"),
-            )],
         )
 
         # ── start check ─────────────────────────────────────────────────
