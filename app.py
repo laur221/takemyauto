@@ -85,5 +85,6 @@ if __name__ == "__main__":
 
     bot.start_background_scheduler(interval_seconds=21600, is_headless=True)
 
-    # Flet 0.86+: FLET_WEB runs as pure web server (no desktop libs needed)
-    ft.app(target=main_func, view=ft.AppView.FLET_WEB, port=port)
+    # Flet 0.86: WEB_BROWSER serves as HTTP server (xdg-open warnings are harmless)
+    # run() is the non-deprecated equivalent of app()
+    ft.run(target=main_func, view=ft.AppView.WEB_BROWSER, port=port)
