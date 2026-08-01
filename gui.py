@@ -21,6 +21,8 @@ def start_gui(bot_logic):
             border_radius=10, fit="contain",
         )
         qr_status = ft.Text("", size=13, color="#8B949E")
+        steam_status = ft.Text("", size=13, color="#8B949E")
+        check_status = ft.Text("", size=13, color="#8B949E")
 
         runtime_dot = ft.Container(width=8, height=8, border_radius=4, bgcolor="#484F58")
         runtime_text = ft.Text("Idle", size=13, color="#8B949E")
@@ -62,8 +64,9 @@ def start_gui(bot_logic):
 
         def start_qr(e):
             btn_qr.disabled = True
-            qr_status.value = "Se genereaza QR..."
+            qr_status.value = "Am apasat QR - pornesc Selenium..."
             qr_status.color = "#58A6FF"
+            log("BUTON: QR Steam apasat - pornesc SeleniumBase pentru captura QR")
             page.update()
             threading.Thread(target=bot_logic.get_steam_qr, args=(on_qr_bytes,), daemon=True).start()
 
@@ -74,21 +77,32 @@ def start_gui(bot_logic):
         )
 
         # ── steam login in user's browser ───────────────────────────────
-        # Steam login: clickable link (most reliable cross-browser)
-        steam_link = ft.Text(
-            spans=[ft.TextSpan(
-                "Deschide Steam Login in browser nou",
-                ft.TextStyle(decoration="underline", color="#58A6FF", weight="w600"),
-                url="https://store.steampowered.com/login/",
-            )],
-            size=14,
-        )
+        # Steam login with debug feedback
+        def on_steam_click(e):
+            steam_status.value = "Am apasat butonul Steam Login - incerc page.launch_url()..."
+            steam_status.color = "#58A6FF"
+            log("BUTON: Steam Login apasat - incerc sa deschid browserul")
+            page.update()
+            try:
+                page.launch_url("https://store.steampowered.com/login/")
+                steam_status.value = "launch_url() apelat. Verifica daca s-a deschis un tab nou."
+                steam_status.color = "#3FB950"
+                log("BUTON: launch_url() apelat cu succes")
+            except Exception as ex:
+                steam_status.value = f"Eroare launch_url: {ex}"
+                steam_status.color = "#F85149"
+                log(f"BUTON: EROARE launch_url: {ex}")
+            page.update()
 
-        # Button fallback
         steam_btn = ft.ElevatedButton(
             "Deschide Steam Login",
-            on_click=lambda _: page.launch_url("https://store.steampowered.com/login/"),
+            on_click=on_steam_click,
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#1F6FEB"),
+        )
+
+        steam_link = ft.Text(
+            "stiam store.steampowered.com/login si logheaza-te manual",
+            size=12, color="#8B949E",
         )
 
         # ── start check ─────────────────────────────────────────────────
@@ -98,7 +112,9 @@ def start_gui(bot_logic):
             runtime_dot.bgcolor = "#58A6FF"
             runtime_text.value = "Ruleaza..."
             runtime_text.color = "#58A6FF"
-            log("Pornesc verificarea automata...")
+            check_status.value = "Verificare in curs..."
+            check_status.color = "#58A6FF"
+            log("BUTON: Verificare apasat - pornesc SeleniumBase headless")
             page.update()
 
             def worker():
@@ -242,6 +258,7 @@ def start_gui(bot_logic):
                             "Conecteaza-te prin QR sau deschide Steam in browser.",
                             ft.Column([
                                 ft.Row([btn_qr, steam_btn], spacing=10),
+                                steam_status,
                                 qr_image,
                                 qr_status,
                             ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
@@ -251,6 +268,7 @@ def start_gui(bot_logic):
                             "Ruleaza o verificare manuala si vezi rezultatele.",
                             ft.Column([
                                 btn_check,
+                                check_status,
                                 ft.Text(
                                     "Schedulerul ruleaza automat la fiecare 6 ore.",
                                     size=12, color="#484F58",
