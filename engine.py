@@ -2,10 +2,13 @@ from seleniumbase import Driver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import json
+import requests
+import secrets
 import time
 import threading
 import os
-import tempfile
+import urllib.parse
 
 
 class RaffleBot:

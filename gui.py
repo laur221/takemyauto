@@ -4,32 +4,30 @@ import threading
 import datetime
 
 
-# ── Start GUI ───────────────────────────────────────────────────────────
-
 def start_gui(bot_logic):
     def main(page: ft.Page):
         page.theme_mode = ft.ThemeMode.DARK
         page.title = "TakeMySkins Automator"
-        page.padding = 20
-        page.bgcolor = "#0D1117"
+        page.padding = 0
+        page.bgcolor = "#0A0E17"
         page.scroll = ft.ScrollMode.ADAPTIVE
 
         # ── state ───────────────────────────────────────────────────────
-
-        log_area = ft.ListView(expand=True, spacing=4, auto_scroll=True, height=260)
+        log_area = ft.ListView(expand=True, spacing=3, auto_scroll=True, height=240)
+        stats_body = ft.Container()
 
         qr_image = ft.Image(
-            src="", width=200, height=200, visible=False, border_radius=10, fit="contain"
+            src="", width=200, height=200, visible=False,
+            border_radius=10, fit="contain",
         )
+        qr_status = ft.Text("", size=13, color="#8B949E")
 
-        login_status = ft.Text("", size=13, color="#8B9BB4")
-        runtime_status = ft.Text("Idle", size=13, color="#8B9BB4")
+        runtime_dot = ft.Container(width=8, height=8, border_radius=4, bgcolor="#484F58")
+        runtime_text = ft.Text("Idle", size=13, color="#8B949E")
 
-        progress = ft.ProgressBar(width=float("inf"), visible=False, color="#3B82F6", bgcolor="#161B22")
-
-        stats_container = ft.Container()
-
-        # ── helpers ─────────────────────────────────────────────────────
+        progress = ft.ProgressBar(
+            width=float("inf"), visible=False, color="#3B82F6", bgcolor="#161B22"
+        )
 
         def log(msg):
             now = datetime.datetime.now().strftime("%H:%M:%S")
@@ -38,153 +36,153 @@ def start_gui(bot_logic):
             )
             page.update()
 
-        # ── QR callback ─────────────────────────────────────────────────
-
+        # ── QR ──────────────────────────────────────────────────────────
         def on_qr_bytes(qr_bytes):
             if isinstance(qr_bytes, dict):
-                login_status.value = qr_bytes.get("error", "Eroare QR")
-                login_status.color = "#F59E0B"
+                qr_status.value = qr_bytes.get("error", "Eroare QR")
+                qr_status.color = "#D29922"
                 btn_qr.disabled = False
                 page.update()
                 return
             if qr_bytes:
                 try:
                     qr_image.src = None
-                    qr_image.src_base64 = base64.b64encode(qr_bytes).decode("ascii")
+                    qr_image.src_base64 = base64.b64encode(qr_bytes).decode()
                     qr_image.visible = True
-                    login_status.value = "Scaneaza QR cu Steam Mobile"
-                    login_status.color = "#22C55E"
+                    qr_status.value = "Scaneaza codul QR cu Steam Mobile"
+                    qr_status.color = "#3FB950"
                 except Exception as e:
-                    login_status.value = f"Eroare QR: {e}"
-                    login_status.color = "#F87171"
+                    qr_status.value = f"Eroare: {e}"
+                    qr_status.color = "#F85149"
             else:
-                login_status.value = "QR indisponibil"
-                login_status.color = "#F59E0B"
+                qr_status.value = "QR indisponibil - incearca din nou"
+                qr_status.color = "#D29922"
             btn_qr.disabled = False
             page.update()
 
-        def on_qr_click(e):
+        def start_qr(e):
             btn_qr.disabled = True
-            login_status.value = "Se genereaza QR..."
-            login_status.color = "#3B82F6"
+            qr_status.value = "Se genereaza QR..."
+            qr_status.color = "#58A6FF"
             page.update()
             threading.Thread(target=bot_logic.get_steam_qr, args=(on_qr_bytes,), daemon=True).start()
 
-        # ── buttons ─────────────────────────────────────────────────────
-
         btn_qr = ft.ElevatedButton(
-            "Genereaza QR",
-            on_click=on_qr_click,
+            "Genereaza QR Steam",
+            on_click=start_qr,
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#3B82F6"),
         )
 
-        btn_login = ft.ElevatedButton(
-            "Login manual",
-            on_click=lambda _: bot_logic.run_check(is_headless=False, log_func=log),
-            style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#30363D"),
+        # ── steam login in user's browser ───────────────────────────────
+        btn_steam = ft.ElevatedButton(
+            "Deschide Steam Login",
+            on_click=lambda _: page.launch_url("https://store.steampowered.com/login/"),
+            style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#1F6FEB"),
         )
 
-        btn_start = ft.ElevatedButton(
-            "Ruleaza verificarea",
-            on_click=None,  # set below
-            style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#238636"),
-        )
-
-        def on_start(e):
-            btn_start.disabled = True
+        # ── start check ─────────────────────────────────────────────────
+        def do_check(e):
+            btn_check.disabled = True
             progress.visible = True
-            runtime_status.value = "Ruleaza..."
-            runtime_status.color = "#3B82F6"
+            runtime_dot.bgcolor = "#58A6FF"
+            runtime_text.value = "Ruleaza..."
+            runtime_text.color = "#58A6FF"
             log("Pornesc verificarea automata...")
             page.update()
 
             def worker():
                 result = bot_logic.run_check(is_headless=True, log_func=log)
-                btn_start.disabled = False
+                btn_check.disabled = False
                 progress.visible = False
-                runtime_status.value = "Idle"
-                runtime_status.color = "#8B9BB4"
+                runtime_dot.bgcolor = "#484F58"
+                runtime_text.value = "Idle"
+                runtime_text.color = "#8B949E"
                 log(f"Verificare terminata: {result}")
                 refresh_stats()
                 page.update()
 
             threading.Thread(target=worker, daemon=True).start()
 
-        btn_start.on_click = on_start
+        btn_check = ft.ElevatedButton(
+            "Ruleaza verificarea",
+            on_click=do_check,
+            style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#238636"),
+        )
 
         # ── stats ───────────────────────────────────────────────────────
-
         def build_stats():
             try:
                 total, wins = bot_logic.db.get_stats()
             except Exception:
                 total, wins = 0, []
 
-            cards = ft.Row([
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("Rafle verificate", size=12, color="#8B9BB4"),
-                        ft.Text(str(total), size=32, weight="bold", color="#E6EDF3"),
-                    ], spacing=4, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=16, border_radius=8, bgcolor="#161B22", expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("Castiguri", size=12, color="#8B9BB4"),
-                        ft.Text(str(len(wins)), size=32, weight="bold", color="#22C55E"),
-                    ], spacing=4, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=16, border_radius=8, bgcolor="#161B22", expand=True,
-                ),
+            stat_cards = ft.Row([
+                _stat_card("Rafle verificate", str(total), "#E6EDF3"),
+                _stat_card("Castiguri", str(len(wins)), "#3FB950"),
+                _stat_card("Ultima rulare",
+                           datetime.datetime.now().strftime("%H:%M") if total > 0 else "-",
+                           "#8B949E"),
             ], spacing=12)
 
             if wins:
-                table = ft.DataTable(
-                    columns=[
-                        ft.DataColumn(ft.Text("Premiu", color="#E6EDF3")),
-                        ft.DataColumn(ft.Text("Status", color="#E6EDF3")),
-                        ft.DataColumn(ft.Text("Data", color="#E6EDF3")),
-                    ],
-                    rows=[
-                        ft.DataRow(cells=[
-                            ft.DataCell(ft.Text(str(w[3])[:40], color="#C9D1D9")),
-                            ft.DataCell(ft.Text(str(w[2]), color="#C9D1D9")),
-                            ft.DataCell(ft.Text(str(w[4])[:16], color="#8B9BB4")),
-                        ]) for w in wins
-                    ],
-                )
-                history = ft.Row([table], scroll=ft.ScrollMode.ALWAYS)
+                rows = []
+                for w in wins:
+                    rows.append(ft.DataRow(cells=[
+                        ft.DataCell(ft.Text(str(w[3])[:35] if w[3] else "-", color="#C9D1D9")),
+                        ft.DataCell(ft.Text(str(w[2]) if w[2] else "-", color="#C9D1D9")),
+                        ft.DataCell(ft.Text(str(w[4])[:16] if w[4] else "-", color="#8B949E", size=12)),
+                    ]))
+                history = ft.Column([
+                    ft.Text("Istoric", size=14, weight="bold", color="#E6EDF3"),
+                    ft.Row([
+                        ft.DataTable(
+                            columns=[
+                                ft.DataColumn(ft.Text("Premiu", color="#E6EDF3")),
+                                ft.DataColumn(ft.Text("Status", color="#E6EDF3")),
+                                ft.DataColumn(ft.Text("Data", color="#E6EDF3")),
+                            ],
+                            rows=rows,
+                        ),
+                    ], scroll=ft.ScrollMode.ALWAYS),
+                ], spacing=8)
             else:
                 history = ft.Container(
-                    content=ft.Column([
-                        ft.Text("Niciun castig inca.", size=14, color="#8B9BB4"),
-                        ft.Text("Vor aparea automat aici dupa verificari.", size=12, color="#484F58"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
-                    padding=30, border_radius=8, bgcolor="#161B22",
+                    content=ft.Text("Niciun castig inca. Vor aparea automat aici.",
+                                    size=13, color="#484F58"),
+                    padding=ft.Padding(left=0, top=20, right=0, bottom=20),
                 )
 
-            return ft.Column([cards, ft.Text("Istoric castiguri", size=15, weight="bold", color="#E6EDF3"), history], spacing=12)
+            return ft.Column([stat_cards, history], spacing=14)
 
-        stats_container.content = build_stats()
+        def _stat_card(label, value, color):
+            return ft.Container(
+                content=ft.Column([
+                    ft.Text(label, size=11, color="#8B949E", weight="w600"),
+                    ft.Text(value, size=28, weight="bold", color=color),
+                ], spacing=4, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.Padding(left=16, top=12, right=16, bottom=12),
+                border_radius=8, bgcolor="#161B22", expand=True,
+            )
+
+        stats_body.content = build_stats()
 
         def refresh_stats(e=None):
-            stats_container.content = build_stats()
+            stats_body.content = build_stats()
             page.update()
 
         # ── card builder ─────────────────────────────────────────────────
-
-        def card(title_text, subtitle_text, body, extra=None):
-            header_row = ft.Row([
-                ft.Column([
-                    ft.Text(title_text, size=16, weight="bold", color="#E6EDF3"),
-                    ft.Text(subtitle_text, size=13, color="#8B9BB4"),
-                ], spacing=2, expand=True),
-            ] + ([extra] if extra else []), vertical_alignment=ft.CrossAxisAlignment.CENTER)
-
+        def _card(title, sub, body, right=None):
             return ft.Container(
-                content=ft.Column([header_row, body], spacing=14),
-                padding=18,
-                border_radius=10,
-                bgcolor="#131820",
+                content=ft.Column([
+                    ft.Row([
+                        ft.Column([
+                            ft.Text(title, size=16, weight="bold", color="#F0F6FC"),
+                            ft.Text(sub, size=13, color="#8B949E"),
+                        ], spacing=2, expand=True),
+                    ] + ([right] if right else []), vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    body,
+                ], spacing=12),
+                padding=18, border_radius=10, bgcolor="#131820",
                 border=ft.Border(
                     top=ft.BorderSide(width=1, color="#21262D"),
                     bottom=ft.BorderSide(width=1, color="#21262D"),
@@ -194,12 +192,8 @@ def start_gui(bot_logic):
             )
 
         # ── log terminal ────────────────────────────────────────────────
-
-        log_terminal = ft.Container(
-            content=log_area,
-            padding=12,
-            border_radius=8,
-            bgcolor="#0B0F14",
+        log_box = ft.Container(
+            content=log_area, padding=12, border_radius=8, bgcolor="#0B0F14",
             border=ft.Border(
                 top=ft.BorderSide(width=1, color="#1A3A5C"),
                 bottom=ft.BorderSide(width=1, color="#1A3A5C"),
@@ -209,65 +203,66 @@ def start_gui(bot_logic):
         )
 
         # ── layout ──────────────────────────────────────────────────────
-
         header = ft.Row([
             ft.Column([
-                ft.Text("TakeMySkins Automator", size=26, weight="bold", color="#F0F6FC"),
-                ft.Text("Dashboard automat de rafle", size=14, color="#8B9BB4"),
+                ft.Text("TakeMySkins Automator", size=24, weight="bold", color="#F0F6FC"),
+                ft.Text("Automatizare rafle  .  takemyskins.com", size=13, color="#484F58"),
             ], spacing=2, expand=True),
             ft.Container(
-                content=ft.Row([
-                    ft.Container(width=8, height=8, border_radius=4, bgcolor="#3B82F6"),
-                    runtime_status,
-                ], spacing=8),
+                content=ft.Row([runtime_dot, runtime_text], spacing=8),
                 padding=ft.Padding(left=14, top=8, right=14, bottom=8),
-                border_radius=16,
-                bgcolor="#161B22",
+                border_radius=16, bgcolor="#161B22",
             ),
         ], vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
+        refresh_btn = ft.IconButton(
+            icon="refresh", icon_color="#8B949E", on_click=refresh_stats,
+        )
+
         page.add(
-            ft.Column([
-                header,
-                progress,
-                ft.Row([
-                    card(
-                        "Autentificare Steam",
-                        "Conecteaza-te prin QR pentru a participa la rafle.",
-                        ft.Column([
-                            ft.Row([btn_qr, btn_login], spacing=10),
-                            qr_image,
-                            login_status,
-                        ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    ),
-                    card(
-                        "Control verificari",
-                        "Ruleaza o verificare manuala sau actualizeaza statisticile.",
-                        ft.Column([
-                            btn_start,
-                            ft.Text("Schedulerul ruleaza la fiecare 6 ore in fundal.",
-                                    size=12, color="#484F58"),
-                        ], spacing=10),
-                        extra=ft.IconButton(
-                            icon='refresh',
-                            icon_color="#8B9BB4",
-                            on_click=refresh_stats,
+            ft.Container(
+                padding=ft.Padding(left=24, top=20, right=24, bottom=20),
+                content=ft.Column([
+                    header,
+                    progress,
+                    ft.Row([
+                        _card(
+                            "Login Steam",
+                            "Conecteaza-te prin QR sau deschide Steam in browser.",
+                            ft.Column([
+                                ft.Row([btn_qr, btn_steam], spacing=10),
+                                qr_image,
+                                qr_status,
+                            ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                         ),
+                        _card(
+                            "Verificare rafle",
+                            "Ruleaza o verificare manuala si vezi rezultatele.",
+                            ft.Column([
+                                btn_check,
+                                ft.Text(
+                                    "Schedulerul ruleaza automat la fiecare 6 ore.",
+                                    size=12, color="#484F58",
+                                ),
+                            ], spacing=10),
+                            right=refresh_btn,
+                        ),
+                    ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+                    _card(
+                        "Statistici si castiguri",
+                        "Rezultatele verificarilor si istoricul premiilor.",
+                        stats_body,
+                        right=refresh_btn,
                     ),
-                ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
-                card(
-                    "Statistici si castiguri",
-                    "Rezultatele verificarilor automate si istoricul premiilor.",
-                    stats_container,
-                ),
-                card(
-                    "Console log",
-                    "Iesire in timp real a verificarilor si erorilor.",
-                    log_terminal,
-                ),
-                ft.Text("TakeMySkins Automator  v1.0  .  Render Free Tier",
-                        size=11, color="#30363D", text_align=ft.TextAlign.CENTER),
-            ], spacing=14, scroll=ft.ScrollMode.ADAPTIVE),
+                    _card(
+                        "Console log",
+                        "Iesirea in timp real a verificarilor.",
+                        log_box,
+                    ),
+                    ft.Text("v1.0  .  Render Free  .  $0/mo",
+                            size=11, color="#21262D", text_align=ft.TextAlign.CENTER),
+                ], spacing=14, scroll=ft.ScrollMode.ADAPTIVE),
+            )
         )
 
     return main
