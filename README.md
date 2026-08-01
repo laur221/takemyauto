@@ -59,6 +59,13 @@ curl http://localhost:8081/status
 
 **Zero-cost deployment** - No credit card needed ✓
 
+Database Note: App auto-detects and uses:
+- **Render Free**: SQLite (built-in) ✅
+- **Render PostgreSQL**: Auto-detected if added ✅
+- **Local Dev**: PostgreSQL or SQLite ✅
+
+See `DATABASE.md` for full database options.
+
 ```bash
 # Push to GitHub
 git add -A
@@ -91,17 +98,21 @@ takemyskinauto/
 ├── app.py                    # Web server + health endpoints
 ├── engine.py                 # Bot logic + background scheduler
 ├── gui.py                    # Flet web interface
-├── db_manager.py             # Database management
+├── db_manager.py             # Database management (auto-fallback)
 ├── requirements.txt          # Python dependencies
 │
 ├── README.md                 # This file
+├── DATABASE.md               # Database configuration guide
 ├── KEEP_ALIVE.md             # Render spin-down prevention guide
 ├── README_RENDER.md          # Steam session management on Render Free
+├── LOCAL_TEST_GUIDE.md       # Local testing procedures
 ├── DEPLOYMENT_CHECKLIST.md   # Pre/post deployment steps
 │
 ├── Dockerfile                # Container for Render deployment
+├── render.yaml               # Render auto-configuration
 ├── user_session/             # Browser session cache (Steam cookies)
 ├── downloaded_files/         # Raffle data storage
+├── data.db                   # SQLite database (auto-created, Render Free)
 └── .git/                     # Version control
 ```
 
@@ -304,8 +315,11 @@ Am găsit 12 rafle pe pagină.
 
 ## 📖 Full Documentation
 
+- **README.md** - Project overview & architecture (this file)
+- **DATABASE.md** - Database configuration (SQLite/PostgreSQL/Render)
 - **KEEP_ALIVE.md** - Complete keep-alive strategies for Render
 - **README_RENDER.md** - Steam session management & options
+- **LOCAL_TEST_GUIDE.md** - Complete local testing procedures
 - **DEPLOYMENT_CHECKLIST.md** - Pre/post deployment verification
 
 ---
