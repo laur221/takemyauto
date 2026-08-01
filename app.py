@@ -85,5 +85,5 @@ if __name__ == "__main__":
 
     bot.start_background_scheduler(interval_seconds=21600, is_headless=True)
 
-    # Flet 0.86+: use main() instead of deprecated app()
-    ft.app(target=main_func, view=ft.AppView.FLET_APP, port=port)
+    # Flet 0.86+: FLET_WEB runs as pure web server (no desktop libs needed)
+    ft.app(target=main_func, view=ft.AppView.FLET_WEB, port=port)
