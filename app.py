@@ -55,7 +55,6 @@ def start_internal_health_server(port):
     server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"Health server pornit pe portul {port} (/healthz).")
-    return server
 
 
 def keep_alive_self_ping(target_url, interval_seconds=600):
@@ -85,6 +84,6 @@ if __name__ == "__main__":
 
     bot.start_background_scheduler(interval_seconds=21600, is_headless=True)
 
-    # Flet 0.86: WEB_BROWSER serves as HTTP server (xdg-open warnings are harmless)
-    # run() is the non-deprecated equivalent of app()
-    ft.run(target=main_func, view=ft.AppView.WEB_BROWSER, port=port)
+    # Flet 0.86: app() is deprecated but run() may behave differently in Docker
+    # WEB_BROWSER = runs as HTTP server (xdg-open noise is harmless in container)
+    ft.app(target=main_func, view=ft.AppView.WEB_BROWSER, port=port)
