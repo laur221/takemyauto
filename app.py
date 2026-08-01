@@ -52,9 +52,11 @@ class HealthHandler(BaseHTTPRequestHandler):
 
 
 def start_internal_health_server(port):
-    server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
+    # Bind to 127.0.0.1 ONLY - internal use, not exposed to Render
+    # Render should route traffic to Flet's port, not here
+    server = ThreadingHTTPServer(("127.0.0.1", port), HealthHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    print(f"Health server pornit pe portul {port} (/healthz).")
+    print(f"Health server pornit pe 127.0.0.1:{port} (/healthz) - internal only.")
 
 
 def keep_alive_self_ping(target_url, interval_seconds=600):
@@ -84,6 +86,6 @@ if __name__ == "__main__":
 
     bot.start_background_scheduler(interval_seconds=21600, is_headless=True)
 
-    # Flet 0.86: app() is deprecated but run() may behave differently in Docker
-    # WEB_BROWSER = runs as HTTP server (xdg-open noise is harmless in container)
+    # Flet on 0.0.0.0:PORT - this is what Render will route traffic to
+    print(f"Flet web UI starting on 0.0.0.0:{port}")
     ft.app(target=main_func, view=ft.AppView.WEB_BROWSER, port=port)
