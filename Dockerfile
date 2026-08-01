@@ -34,11 +34,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Symlink: SeleniumBase looks for 'google-chrome' or 'chrome' by default
-RUN ln -s /usr/bin/chromium /usr/bin/google-chrome \
-    && ln -s /usr/bin/chromium /usr/bin/chrome \
-    && ln -s /usr/bin/chromedriver /usr/bin/chromedriver
+# -sf = force, ignores "file exists" (chromedriver already installed by package)
+RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
+    && ln -sf /usr/bin/chromium /usr/bin/chrome \
+    && ln -sf /usr/bin/chromedriver /usr/bin/chromedriver
 
-# Environment — tell SeleniumBase to use system Chromium
+# Environment - tell SeleniumBase to use system Chromium
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMIUM_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
