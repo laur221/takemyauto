@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: takemyskins-automator
+    runtime: docker
+    region: oregon
+    plan: free
+    
+    # Port mapping
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: HEALTHCHECK_PORT
+        value: 8081
+      - key: SELF_PING_INTERVAL
+        value: 600  # 10 minutes - prevents spin-down
+      - key: SCHEDULER_INTERVAL
+        value: 21600  # 6 hours - raffle check interval
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: DISPLAY
+        value: ":99"
+    
+    # Health check (prevents false "crashed" alerts)
+    healthCheckPath: /healthz
+    healthCheckInterval: 30  # seconds
+    
+    # Auto-deploy on git push
+    autoDeploy: true

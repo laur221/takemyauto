@@ -1,5 +1,9 @@
 import os
 import flet as ft
+import time
+import threading
+import requests
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from db_manager import DBManager
 from engine import RaffleBot
 from gui import start_gui
@@ -10,7 +14,86 @@ db.setup_db()
 bot = RaffleBot(db)
 app_func = start_gui(bot)
 
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/healthz":
+            body = b"ok"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        
+        elif self.path == "/ping":
+            # Endpoint pentru cron-job.org - confirmă că serverul e viu
+            body = b'{"status": "alive"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        
+        elif self.path == "/status":
+            # Status complet pentru monitoring
+            body = b'{"app": "TakeMySkins Automator", "status": "running"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        return
+
+
+def start_internal_health_server(port):
+    server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print(f"Health server pornit pe portul {port} (/healthz).")
+    return server
+
+
+def keep_alive_self_ping(target_url, interval_seconds=600):
+    """Self-ping intern: util pentru menținerea buclei active în proces.
+    
+    Pentru Render Free: Trimite ping-uri la /healthz la fiecare 10 minute.
+    Aceasta previne timeout-ul și "app is waking up" pe dyno-uri gratuite.
+    """
+    while True:
+        try:
+            response = requests.get(target_url, timeout=10)
+            if response.status_code == 200:
+                print(f"[KEEP-ALIVE] Self-ping OK: {target_url}")
+            else:
+                print(f"[KEEP-ALIVE] Unexpected status {response.status_code}")
+        except requests.exceptions.Timeout:
+            print(f"[KEEP-ALIVE] Timeout la self-ping (ignorat)")
+        except Exception as e:
+            print(f"[KEEP-ALIVE] Eroare: {e}")
+        time.sleep(interval_seconds)
+
 if __name__ == "__main__":
-    # Rulare locală sau pe server (Flet detectează portul din variabila de mediu PORT pe Render)
+    # Rulare locală sau pe server
     port = int(os.getenv("PORT", 8080))
+
+    # Pornim endpoint-ul intern pentru auto ping și bucla locală de self-ping
+    health_port = int(os.getenv("HEALTHCHECK_PORT", str(port + 1)))
+    start_internal_health_server(health_port)
+    self_ping_url = f"http://127.0.0.1:{health_port}/healthz"
+    
+    # 🔴 RENDER FREE OPTIMIZATION: Ping la 10 minute pentru a preveni spin-down
+    # (Render suspendă après 15 min inactivitate → +50 sec delay)
+    # Interval 10 min = dyno rămâne activ 24/7
+    SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", 600))  # 10 min default
+    threading.Thread(target=keep_alive_self_ping, args=(self_ping_url, SELF_PING_INTERVAL), daemon=True).start()
+
+    # Scheduler-ul mutat în engine.py (la fiecare 6 ore implicit)
+    bot.start_background_scheduler(interval_seconds=21600, is_headless=True)
+
     ft.app(target=app_func, view=ft.AppView.WEB_BROWSER, port=port)

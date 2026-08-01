@@ -1,11 +1,17 @@
 from seleniumbase import Driver
 import time
+import threading
+import base64
+import os
 
 
 class RaffleBot:
     def __init__(self, db):
         self.db = db
         self.session_dir = "./user_session"
+        self._check_lock = threading.Lock()
+        self._scheduler_thread = None
+        self._scheduler_stop_event = threading.Event()
 
     # În engine.py, modifică metoda run_check:
     def run_check(self, is_headless=True, log_func=None):
@@ -13,7 +19,19 @@ class RaffleBot:
             if log_func: log_func(msg)
             print(msg)
 
-        driver = Driver(uc=True, user_data_dir=self.session_dir, headless=is_headless)
+        if not self._check_lock.acquire(blocking=False):
+            log("O verificare rulează deja. Sar peste execuția paralelă.")
+            return "Deja rulează"
+
+        # Optimizări critice pentru Render Free (512MB RAM)
+        driver = Driver(
+            uc=True, 
+            user_data_dir=self.session_dir, 
+            headless=is_headless,
+            agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            # Dezactivăm chestiile inutile pentru a economisi RAM
+            chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--disable-extensions,--memory-pressure-off"
+        )
         try:
             log("Se deschide browserul...")
             driver.get("https://takemyskins.com/")
@@ -79,6 +97,33 @@ class RaffleBot:
             return "Eroare"
         finally:
             driver.quit()
+            self._check_lock.release()
+
+    def start_background_scheduler(self, interval_seconds=21600, is_headless=True, log_func=None):
+        if self._scheduler_thread and self._scheduler_thread.is_alive():
+            return
+
+        self._scheduler_stop_event.clear()
+
+        def log(msg):
+            if log_func:
+                log_func(msg)
+            print(msg)
+
+        def worker():
+            while not self._scheduler_stop_event.is_set():
+                log("Pornesc verificarea automată a raflelor (Background Task)...")
+                try:
+                    self.run_check(is_headless=is_headless, log_func=log_func)
+                except Exception as e:
+                    log(f"Eroare în scheduler: {e}")
+                self._scheduler_stop_event.wait(interval_seconds)
+
+        self._scheduler_thread = threading.Thread(target=worker, daemon=True)
+        self._scheduler_thread.start()
+
+    def stop_background_scheduler(self):
+        self._scheduler_stop_event.set()
 
     def check_wins_internal(self, driver, log):
         try:
@@ -112,28 +157,77 @@ class RaffleBot:
         driver.switch_to.window(driver.window_handles[0])
 
     def get_steam_qr(self, refresh_ui_callback):
-        # Deschidem browserul în mod headless pentru a lua QR-ul
+        """Generează QR Code Steam și îl trimite pe web în format base64.
+        
+        Optimizări:
+        - Timeout mare pentru rendering QR
+        - PNG encoding optimizat pentru web
+        - Eroare graceful dacă QR nu e găsit
+        """
         driver = Driver(uc=True, user_data_dir=self.session_dir, headless=True)
         try:
+            print("[QR] Accesez pagina de login Steam...")
             driver.get("https://store.steampowered.com/login/")
-            time.sleep(5)  # Așteptăm să se genereze QR-ul
+            time.sleep(7)  # Așteptare mai lungă pentru rendering QR
 
-            # Identificăm elementul QR Code (în 2026 Steam folosește clase specifice)
-            # Selectorul pentru containerul QR este de obicei o clasă ce conține "qrcode"
-            qr_selector = "div[class*='login_QR_'] canvas, div[class*='qr_code'] img"
+            # Selectoare alternative pentru QR în 2026
+            qr_selectors = [
+                "div[class*='login_QR_'] canvas",
+                "div[class*='qr_code'] img",
+                "img[class*='qrcode']",
+                "canvas[class*='qr']",
+                "div[class*='QR'] img"
+            ]
 
-            if driver.is_element_visible(qr_selector):
-                # Facem screenshot doar la acel element
-                driver.save_element_screenshot(qr_selector, "temp_qr.png")
-                refresh_ui_callback()  # Anunțăm interfața să arate poza
-
-                # Așteptăm logarea (verificăm dacă URL-ul se schimbă sau apare profilul)
-                for _ in range(60):  # Așteptăm max 60 secunde scanarea
-                    if "steamcommunity.com/id/" in driver.current_url or driver.is_element_visible(".persona"):
-                        print("Logare reușită prin QR!")
+            qr_found = False
+            for selector in qr_selectors:
+                try:
+                    if driver.is_element_visible(selector):
+                        print(f"[QR] QR găsit cu selector: {selector}")
+                        driver.save_element_screenshot(selector, "temp_qr.png")
+                        
+                        # Citim și encodez în base64
+                        with open("temp_qr.png", "rb") as f:
+                            qr_bytes = f.read()
+                            qr_base64 = base64.b64encode(qr_bytes).decode("ascii")
+                        
+                        # Transmit pe UI
+                        refresh_ui_callback(qr_base64)
+                        qr_found = True
+                        print(f"[QR] Trimis pe UI: {len(qr_base64)} bytes base64")
                         break
-                    time.sleep(2)
-            else:
-                print("Nu am găsit QR Code-ul pe pagină.")
+                except Exception as e:
+                    print(f"[QR] Selector eșuat ({selector}): {e}")
+                    continue
+
+            if not qr_found:
+                print("[QR] Niciun QR Code găsit - posibil deja logat")
+                refresh_ui_callback(None)
+                return
+
+            # Așteptare logare (max 60 secunde)
+            print("[QR] Aștept scanarea QR-ului (60 sec timeout)...")
+            for attempt in range(60):
+                try:
+                    if "steamcommunity.com/id/" in driver.current_url or driver.is_element_visible(".persona"):
+                        print("[QR] ✓ Logare reușită prin QR!")
+                        break
+                except:
+                    pass
+                time.sleep(1)
+                if attempt % 10 == 0:
+                    print(f"[QR] Încă aștept... ({attempt}/60)")
+                    
+        except Exception as e:
+            print(f"[QR] Eroare critică: {str(e)}")
+            refresh_ui_callback(None)
         finally:
-            driver.quit()
+            try:
+                driver.quit()
+            except:
+                pass
+            # Cleanup
+            try:
+                os.remove("temp_qr.png")
+            except:
+                pass

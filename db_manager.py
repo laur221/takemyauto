@@ -23,7 +23,13 @@ class DBManager:
 
     def get_conn(self):
         if self.database_url:
-            return psycopg2.connect(self.database_url)
+            # Upstash și alte servicii serverless cer adesea SSL
+            # Verificăm dacă URL-ul conține deja parametri SSL, dacă nu, îi adăugăm
+            url = self.database_url
+            if "sslmode=" not in url:
+                separator = "&" if "?" in url else "?"
+                url = f"{url}{separator}sslmode=require"
+            return psycopg2.connect(url)
         return psycopg2.connect(**self.conn_params)
 
     def save_raffle(self, name, status, item="None"):

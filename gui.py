@@ -1,5 +1,3 @@
-import os
-
 import flet as ft
 import threading
 
@@ -21,20 +19,31 @@ def start_gui(bot_logic):
 
         # Elementul care va afișa QR Code-ul
         qr_image = ft.Image(
-            src="temp_qr.png",
-            width=200,
-            height=200,
+            src_base64="",
+            width=250,
+            height=250,
             visible=False,
-            border_radius=10
+            border_radius=15,
+            fit=ft.ImageFit.CONTAIN
         )
 
         login_status = ft.Text("Așteptare solicitare login...", size=12)
 
-        def refresh_qr():
-            # Această funcție va fi apelată când bot-ul face un screenshot nou la QR
-            qr_image.src = f"temp_qr.png?{os.urandom(5).hex()}"  # Cache-busting
-            qr_image.visible = True
-            login_status.value = "Scanează codul cu aplicația Steam Mobile"
+        def refresh_qr(qr_base64):
+            # Această funcție va fi apelată când bot-ul generează un QR nou
+            if qr_base64:
+                try:
+                    qr_image.src_base64 = qr_base64
+                    qr_image.visible = True
+                    login_status.value = "✓ Scanează QR-ul cu aplicația Steam Mobile"
+                    login_status.color = "green400"
+                except Exception as e:
+                    login_status.value = f"Eroare QR: {str(e)}"
+                    login_status.color = "red400"
+            else:
+                login_status.value = "⚠ Nu am putut genera QR-ul Steam."
+                login_status.color = "orange400"
+            btn_qr.disabled = False
             page.update()
 
         def on_qr_request(e):
@@ -42,8 +51,7 @@ def start_gui(bot_logic):
             login_status.value = "Inițiez cerere QR..."
             page.update()
             # Pornim procesul de captură QR într-un thread
-            import threading
-            threading.Thread(target=bot_logic.get_steam_qr, args=(refresh_qr,)).start()
+            threading.Thread(target=bot_logic.get_steam_qr, args=(refresh_qr,), daemon=True).start()
 
         btn_qr = ft.ElevatedButton("Generează QR Code Steam", on_click=on_qr_request)
 
