@@ -140,7 +140,7 @@ def start_gui(bot_logic):
                 ft.Text(f"Total Verificate: {total}", size=20, weight="bold"),
                 ft.Divider(),
                 ft.Text("Istoric Castiguri:", size=18, weight="bold", color="green400"),
-                ft.Container(content=table, height=200, scroll=ft.ScrollMode.ALWAYS)
+                ft.Column([ft.Row([table], scroll=ft.ScrollMode.ALWAYS)], scroll=ft.ScrollMode.ALWAYS)
             ], scroll=ft.ScrollMode.ADAPTIVE)
 
         stats_container = ft.Container(content=show_stats_page())
