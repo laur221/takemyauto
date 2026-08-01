@@ -9,7 +9,6 @@ def start_gui(bot_logic):
         page.padding = 25
         page.bgcolor = "#1a1c2e"
 
-        # Zona de Log-uri
         log_area = ft.ListView(
             expand=True,
             spacing=5,
@@ -17,7 +16,6 @@ def start_gui(bot_logic):
             height=350
         )
 
-        # Elementul care va afisa QR Code-ul
         qr_image = ft.Image(
             src="",
             width=250,
@@ -103,13 +101,14 @@ def start_gui(bot_logic):
 
         progress = ft.ProgressBar(width=float("inf"), visible=False, color="blue400")
 
+        # Flet 0.86 border: use ft.Border class directly, not ft.border.* helpers
         log_container = ft.Container(
             content=log_area,
-            border=ft.border.only(
-                top=ft.BorderSide(1, "blue900"),
-                bottom=ft.BorderSide(1, "blue900"),
-                left=ft.BorderSide(1, "blue900"),
-                right=ft.BorderSide(1, "blue900"),
+            border=ft.Border(
+                top=ft.BorderSide(width=1, color="blue900"),
+                bottom=ft.BorderSide(width=1, color="blue900"),
+                left=ft.BorderSide(width=1, color="blue900"),
+                right=ft.BorderSide(width=1, color="blue900"),
             ),
             border_radius=15,
             padding=15,
