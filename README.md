@@ -55,39 +55,28 @@ curl http://localhost:8081/healthz
 curl http://localhost:8081/status
 ```
 
-### Deploy to Render.com (Free)
+### Deploy to Render.com (Free) ⚡
 
-**Zero-cost deployment** - No credit card needed ✓
+**100% FREE - $0/month - No Credit Card** ✓
 
-Database Note: App auto-detects and uses:
-- **Render Free**: SQLite (built-in) ✅
-- **Render PostgreSQL**: Auto-detected if added ✅
-- **Local Dev**: PostgreSQL or SQLite ✅
+**Quick path (5 min)**:
+👉 See **`QUICK_START.md`** for copy-paste instructions
 
-See `DATABASE.md` for full database options.
+**Detailed path**:
+👉 See **`RENDER_DEPLOYMENT.md`** for step-by-step
 
-```bash
-# Push to GitHub
-git add -A
-git commit -m "Deploy TakeMySkins Automator"
-git push origin main
+---
 
-# Then:
-# 1. Go to Render.com
-# 2. Create new Web Service
-# 3. Connect GitHub repo
-# 4. Set start command: python app.py
-# 5. Add environment variables (see below)
-# 6. Deploy!
-```
+## 💰 Cost
 
-**Environment Variables on Render**:
-```env
-PORT=8080
-HEALTHCHECK_PORT=8081
-SELF_PING_INTERVAL=600
-SCHEDULER_INTERVAL=21600
-```
+**TOTAL: $0/month FOREVER** ✓
+
+- Render Free Tier: $0
+- SQLite Database: $0
+- Cron-Job.org Keep-Alive: $0
+- Steam QR Login: $0
+
+No credit card needed. No hidden fees. No upgrades required.
 
 ---
 
@@ -361,11 +350,13 @@ Am găsit 12 rafle pe pagină.
 
 ## 📖 Full Documentation
 
+- **QUICK_START.md** ⚡ - Deploy in 5 minutes (START HERE!)
 - **README.md** - Project overview & architecture (this file)
-- **DATABASE.md** - Database configuration (SQLite/PostgreSQL/Render)
-- **KEEP_ALIVE.md** - Complete keep-alive strategies for Render
-- **README_RENDER.md** - Steam session management & options
-- **LOCAL_TEST_GUIDE.md** - Complete local testing procedures
+- **RENDER_DEPLOYMENT.md** - Detailed Render setup & troubleshooting
+- **KEEP_ALIVE.md** - Keep-alive strategies (prevent spin-down)
+- **README_RENDER.md** - Steam session management on free tier
+- **LOCAL_TEST_GUIDE.md** - Local testing procedures
+- **DATABASE.md** - Database configuration (SQLite/PostgreSQL)
 - **DEPLOYMENT_CHECKLIST.md** - Pre/post deployment verification
 
 ---
