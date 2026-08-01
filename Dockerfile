@@ -33,11 +33,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Symlink: SeleniumBase looks for 'google-chrome' or 'chrome' by default
-# -sf = force, ignores "file exists" (chromedriver already installed by package)
+# Symlink: SeleniumBase looks for 'google-chrome' or 'chrome' binary
+# chromedriver is already installed by the package, no need to symlink it
 RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
-    && ln -sf /usr/bin/chromium /usr/bin/chrome \
-    && ln -sf /usr/bin/chromedriver /usr/bin/chromedriver
+    && ln -sf /usr/bin/chromium /usr/bin/chrome
 
 # Environment - tell SeleniumBase to use system Chromium
 ENV CHROME_BIN=/usr/bin/chromium
