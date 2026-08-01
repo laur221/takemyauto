@@ -113,12 +113,7 @@ def start_gui(bot_logic):
 
         log_container = ft.Container(
             content=log_area,
-            border=ft.Border(
-            top=ft.BorderSide(1, "blue900"),
-            bottom=ft.BorderSide(1, "blue900"),
-            left=ft.BorderSide(1, "blue900"),
-            right=ft.BorderSide(1, "blue900"),
-            ),
+            border=ft.border.all(1, "blue900"),
             border_radius=15,
             padding=15,
             bgcolor="#0f111a"
