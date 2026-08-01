@@ -1,0 +1,12 @@
+.idea
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+user_session/
+takemyskins_session/
+browser_session/
+steam_profile/
+temp_qr.png
+data.db
+*.log
