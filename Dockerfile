@@ -1,12 +1,16 @@
-# TakeMySkins Automator - Render.com Deployment
+﻿# TakeMySkins Automator - Render.com Deployment
 # Optimized for 512MB RAM free tier
 
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies for SeleniumBase + health checks
+# Install Chromium + system dependencies for SeleniumBase
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    chromium-driver \
+    chromium-common \
+    chromium-sandbox \
     libpq-dev \
     curl \
     ca-certificates \
@@ -29,12 +33,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# Symlink: SeleniumBase looks for 'google-chrome' or 'chrome' by default
+RUN ln -s /usr/bin/chromium /usr/bin/google-chrome \
+    && ln -s /usr/bin/chromium /usr/bin/chrome \
+    && ln -s /usr/bin/chromedriver /usr/bin/chromedriver
+
+# Environment — tell SeleniumBase to use system Chromium
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMIUM_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
+
 # Copy requirements first (for layer caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app.py engine.py gui.py db_manager.py .
+COPY test_flet.py test_flet_image.py .
 
 # Create session directory
 RUN mkdir -p user_session downloaded_files
@@ -42,13 +57,10 @@ RUN mkdir -p user_session downloaded_files
 # Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV DISPLAY=:99
+ENV SE_HEADLESS=1
 
 # Expose ports
 EXPOSE 8080 8081
-
-# Health check for Render (detects spin-up)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8081/healthz || exit 1
 
 # Run application
 CMD ["python", "app.py"]
