@@ -249,7 +249,7 @@ def start_gui(bot_logic):
                                 runtime_dot,
                                 runtime_status,
                             ], spacing=8),
-                            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                            padding=12,
                             border_radius=20,
                             bgcolor="#0F172A",
                         ),
