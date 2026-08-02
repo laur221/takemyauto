@@ -78,11 +78,12 @@ def start_gui(bot_logic):
         )
 
         # ── steam login in user's browser ───────────────────────────────
-        def on_steam_click(e):
+        # ✅ FIX: handler asincron cu await
+        async def on_steam_click(e):
             steam_status.value = "Deschid Steam Login intr-un tab nou..."
             steam_status.color = "#3FB950"
             log("BUTON: Steam Login apasat - deschidere tab nou")
-            page.launch_url("https://store.steampowered.com/login/")
+            await page.launch_url("https://store.steampowered.com/login/")
             page.update()
 
         steam_btn = ft.ElevatedButton(
@@ -91,8 +92,11 @@ def start_gui(bot_logic):
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#1F6FEB"),
         )
 
-        def on_tms_click(e):
-            page.launch_url("https://takemyskins.com/")
+        # ✅ FIX: handler asincron cu await
+        async def on_tms_click(e):
+            log("BUTON: Deschide TakeMySkins apasat")
+            await page.launch_url("https://takemyskins.com/")
+            page.update()
 
         tms_btn = ft.ElevatedButton(
             "Deschide TakeMySkins",
