@@ -1,4 +1,4 @@
-import base64
+﻿import base64
 import flet as ft
 import threading
 import datetime
@@ -12,7 +12,7 @@ def start_gui(bot_logic):
         page.bgcolor = "#0A0E17"
         page.scroll = ft.ScrollMode.ADAPTIVE
 
-        # ── state ───────────────────────────────────────────────────────
+        # â”€â”€ state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         log_area = ft.ListView(expand=True, spacing=3, auto_scroll=True, height=240)
         stats_body = ft.Container()
 
@@ -38,7 +38,7 @@ def start_gui(bot_logic):
             )
             page.update()
 
-        # ── QR ──────────────────────────────────────────────────────────
+        # â”€â”€ QR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         def on_qr_bytes(qr_bytes):
             if isinstance(qr_bytes, dict):
                 qr_status.value = qr_bytes.get("error", "Eroare QR")
@@ -77,7 +77,7 @@ def start_gui(bot_logic):
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#3B82F6"),
         )
 
-        # ── steam login in user's browser ───────────────────────────────
+        # â”€â”€ steam login in user's browser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         def on_steam_click(e):
             steam_status.value = "Deschid Steam Login intr-un tab nou..."
             steam_status.color = "#3FB950"
@@ -100,7 +100,7 @@ def start_gui(bot_logic):
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#238636"),
         )
 
-        # ── start check ─────────────────────────────────────────────────
+        # â”€â”€ start check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         def do_check(e):
             btn_check.disabled = True
             progress.visible = True
@@ -131,7 +131,7 @@ def start_gui(bot_logic):
             style=ft.ButtonStyle(color="#FFFFFF", bgcolor="#238636"),
         )
 
-        # ── stats ───────────────────────────────────────────────────────
+        # â”€â”€ stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         def build_stats():
             try:
                 total, wins = bot_logic.db.get_stats()
@@ -192,7 +192,7 @@ def start_gui(bot_logic):
             stats_body.content = build_stats()
             page.update()
 
-        # ── card builder ─────────────────────────────────────────────────
+        # â”€â”€ card builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         def _card(title, sub, body, right=None):
             return ft.Container(
                 content=ft.Column([
@@ -213,7 +213,7 @@ def start_gui(bot_logic):
                 ),
             )
 
-        # ── log terminal ────────────────────────────────────────────────
+        # â”€â”€ log terminal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         log_box = ft.Container(
             content=log_area, padding=12, border_radius=8, bgcolor="#0B0F14",
             border=ft.Border(
@@ -224,7 +224,7 @@ def start_gui(bot_logic):
             ),
         )
 
-        # ── layout ──────────────────────────────────────────────────────
+        # â”€â”€ layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         header = ft.Row([
             ft.Column([
                 ft.Text("TakeMySkins Automator", size=24, weight="bold", color="#F0F6FC"),
@@ -237,8 +237,7 @@ def start_gui(bot_logic):
             ),
         ], vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
-        refresh_btn = ft.IconButton(
-            icon="refresh", icon_color="#8B949E", on_click=refresh_stats,
+        refresh_btn = ft.IconButton(icon_color="#8B949E", on_click=refresh_stats,
         )
 
         page.add(
