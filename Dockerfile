@@ -30,6 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxfixes3 \
     libxkbcommon0 \
     libxrandr2 \
+    xvfb \
+    xauth \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
@@ -48,8 +50,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app.py engine.py gui.py db_manager.py .
-COPY test_flet.py test_flet_image.py .
+COPY app.py engine.py webui.py db_manager.py .
 
 # Create session directory
 RUN mkdir -p user_session downloaded_files
@@ -57,10 +58,10 @@ RUN mkdir -p user_session downloaded_files
 # Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV DISPLAY=:99
-ENV SE_HEADLESS=1
+ENV SE_HEADLESS=0
 
 # Expose ports
 EXPOSE 8080 8081
 
-# Run application
-CMD ["python", "app.py"]
+# Start Xvfb (virtual display for the Steam login browser), then the app
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 2 && python app.py"]

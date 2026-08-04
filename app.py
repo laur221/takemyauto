@@ -1,62 +1,188 @@
-﻿import os
-import flet as ft
-import time
+﻿import base64
+import datetime
+import os
 import threading
+import time
+
 import requests
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+
 from db_manager import DBManager
 from engine import RaffleBot
-from gui import start_gui
+from webui import INDEX_HTML
 
-# Initialize components
 db = DBManager()
-db.setup_db()
 bot = RaffleBot(db)
-main_func = start_gui(bot)
+
+app = FastAPI(title="TakeMySkins Automator", version="2.0.0", docs_url="/docs", redoc_url=None)
+
+# ── shared runtime state ────────────────────────────────────────────────
+LOG_LINES = []
+LOG_LOCK = threading.Lock()
+MAX_LOG = 400
+
+RUNTIME = {"state": "idle"}  # idle | run | ok | err
+QR_STATE = {"status": "idle", "image": None, "message": "", "ok": False}
+QR_LOCK = threading.Lock()
+CHECK_RUNNING = {"flag": False}
+QR_RUNNING = {"flag": False}
 
 
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/healthz":
-            body = b"ok"
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
-
-        elif self.path == "/ping":
-            body = b'{"status": "alive"}'
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
-
-        elif self.path == "/status":
-            body = b'{"app": "TakeMySkins Automator", "status": "running"}'
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
-
-        self.send_response(404)
-        self.end_headers()
-
-    def log_message(self, format, *args):
-        return
+def _colorize(msg):
+    up = str(msg).upper()
+    if up.startswith("[JOINED]") or up.startswith("[OK]"):
+        return "g"
+    if up.startswith("[WARN]") or up.startswith("[WAIT]"):
+        return "y"
+    if up.startswith("[ERR]") or "EROARE" in up or "ERROR" in up:
+        return "r"
+    if up.startswith("[AUTH]") or up.startswith("[SESSION]"):
+        return "c"
+    if up.startswith("[API]") or up.startswith("[SCHEDULER]"):
+        return "m"
+    return "b"
 
 
-def start_internal_health_server(port):
-    server = ThreadingHTTPServer(("127.0.0.1", port), HealthHandler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    print(f"Health server pornit pe 127.0.0.1:{port} (/healthz) - internal only.")
+def bot_log(msg):
+    now = datetime.datetime.now().strftime("%H:%M:%S")
+    with LOG_LOCK:
+        LOG_LINES.append({"time": now, "msg": str(msg), "color": _colorize(msg)})
+        if len(LOG_LINES) > MAX_LOG:
+            del LOG_LINES[: len(LOG_LINES) - MAX_LOG]
 
 
+def set_runtime(state):
+    RUNTIME["state"] = state
+
+
+def qr_callback(data):
+    """Called from engine.get_steam_qr. data = PNG bytes or dict."""
+    with QR_LOCK:
+        if isinstance(data, dict):
+            if data.get("status") == "success":
+                QR_STATE.update({"status": "done", "ok": True,
+                                 "message": data.get("message", "Sesiune salvata!")})
+            else:
+                QR_STATE.update({"status": "done", "ok": False,
+                                 "message": data.get("error", "Eroare QR")})
+        elif data:
+            b64 = base64.b64encode(data).decode("ascii")
+            QR_STATE.update({"status": "show", "image": b64, "ok": True,
+                             "message": "Scaneaza codul QR cu Steam Mobile"})
+        else:
+            QR_STATE.update({"status": "done", "ok": False,
+                             "message": "QR indisponibil"})
+
+
+def run_check_worker():
+    try:
+        set_runtime("run")
+        bot_log("Pornesc verificarea manuala...")
+        result = bot.run_check(is_headless=True, log_func=bot_log)
+        bot_log(f"Verificare terminata: {result}")
+        set_runtime("ok")
+    except Exception as e:
+        bot_log(f"Eroare la verificare: {e}")
+        set_runtime("err")
+    finally:
+        CHECK_RUNNING["flag"] = False
+
+
+def run_qr_worker():
+    try:
+        bot_log("Se genereaza QR Steam...")
+        bot.get_steam_qr(qr_callback)
+    except Exception as e:
+        bot_log(f"Eroare QR: {e}")
+        QR_STATE.update({"status": "done", "ok": False, "message": str(e)})
+    finally:
+        QR_RUNNING["flag"] = False
+
+
+# ── UI ─────────────────────────────────────────────────────────────────
+@app.get("/", response_class=HTMLResponse)
+def index():
+    return INDEX_HTML
+
+
+# ── API ────────────────────────────────────────────────────────────────
+@app.post("/api/check")
+def api_check():
+    if CHECK_RUNNING["flag"]:
+        return JSONResponse({"error": "O verificare ruleaza deja."}, status_code=409)
+    CHECK_RUNNING["flag"] = True
+    threading.Thread(target=run_check_worker, daemon=True).start()
+    return {"ok": True}
+
+
+@app.post("/api/qr")
+def api_qr():
+    if QR_RUNNING["flag"]:
+        return JSONResponse({"error": "QR-ul se genereaza deja."}, status_code=409)
+    QR_RUNNING["flag"] = True
+    QR_STATE.update({"status": "show", "image": None, "message": "Se genereaza...", "ok": False})
+    threading.Thread(target=run_qr_worker, daemon=True).start()
+    return {"ok": True}
+
+
+@app.get("/api/logs")
+def api_logs(after: int = 0):
+    with LOG_LOCK:
+        lines = LOG_LINES[after:]
+        return {"count": len(LOG_LINES), "lines": lines}
+
+
+@app.get("/api/stats")
+def api_stats():
+    total, wins = db.get_stats()
+    last_run = "-"
+    if wins:
+        try:
+            last_run = str(wins[0][4])[:16]
+        except Exception:
+            last_run = datetime.datetime.now().strftime("%H:%M")
+    elif total > 0:
+        last_run = datetime.datetime.now().strftime("%H:%M")
+
+    win_list = []
+    for w in wins[:20]:
+        win_list.append({
+            "item": str(w[3]) if len(w) > 3 else "-",
+            "status": str(w[2]) if len(w) > 2 else "-",
+            "date": str(w[4])[:16] if len(w) > 4 and w[4] else "-",
+        })
+    return {"total": total, "wins": win_list, "last_run": last_run}
+
+
+@app.get("/api/qr")
+def api_qr_get():
+    with QR_LOCK:
+        return dict(QR_STATE)
+
+
+@app.get("/api/runtime")
+def api_runtime():
+    return {"state": RUNTIME["state"]}
+
+
+# ── health (Render) ────────────────────────────────────────────────────
+@app.get("/healthz")
+def healthz():
+    return "ok"
+
+
+@app.get("/ping")
+def ping():
+    return {"status": "alive"}
+
+
+@app.get("/status")
+def status():
+    return {"app": "TakeMySkins Automator", "status": "running"}
+
+
+# ── keep-alive ─────────────────────────────────────────────────────────
 def keep_alive_self_ping(target_url, interval_seconds=600):
     while True:
         try:
@@ -66,38 +192,38 @@ def keep_alive_self_ping(target_url, interval_seconds=600):
             else:
                 print(f"[KEEP-ALIVE] Unexpected status {response.status_code}")
         except requests.exceptions.Timeout:
-            print(f"[KEEP-ALIVE] Timeout la self-ping (ignorat)")
+            print("[KEEP-ALIVE] Timeout la self-ping (ignorat)")
         except Exception as e:
             print(f"[KEEP-ALIVE] Eroare: {e}")
         time.sleep(interval_seconds)
 
 
 def delayed_scheduler_start(bot, delay=120, interval_seconds=21600):
-    """Start scheduler after delay so Flet initializes first (avoids OOM on 512MB)."""
     print(f"[SCHEDULER] Waiting {delay}s before first check (RAM optimization)...")
     time.sleep(delay)
-    print(f"[SCHEDULER] Delay done, starting background scheduler now.")
-    bot.start_background_scheduler(interval_seconds=interval_seconds, is_headless=True)
+    print("[SCHEDULER] Delay done, starting background scheduler now.")
+    bot.start_background_scheduler(interval_seconds=interval_seconds, is_headless=True, log_func=bot_log)
 
 
 if __name__ == "__main__":
+    import uvicorn
+
     port = int(os.getenv("PORT", 8080))
 
-    health_port = int(os.getenv("HEALTHCHECK_PORT", str(port + 1)))
-    start_internal_health_server(health_port)
-    self_ping_url = f"http://127.0.0.1:{health_port}/healthz"
-
     SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", 600))
-    threading.Thread(target=keep_alive_self_ping, args=(self_ping_url, SELF_PING_INTERVAL), daemon=True).start()
-
-    # Delay scheduler: Flet + SeleniumBase at once = OOM on 512MB Render Free
-    SCHEDULER_DELAY = int(os.getenv("SCHEDULER_DELAY", 120))
     threading.Thread(
-        target=delayed_scheduler_start,
-        args=(bot, SCHEDULER_DELAY, 21600),
+        target=keep_alive_self_ping,
+        args=(f"http://127.0.0.1:{port}/healthz", SELF_PING_INTERVAL),
         daemon=True,
     ).start()
 
-    # Flet on 0.0.0.0:PORT
-    print(f"Flet web UI starting on 0.0.0.0:{port}")
-    ft.app(target=main_func, view=ft.AppView.WEB_BROWSER, port=port)
+    SCHEDULER_DELAY = int(os.getenv("SCHEDULER_DELAY", 120))
+    SCHEDULER_INTERVAL = int(os.getenv("SCHEDULER_INTERVAL", 21600))
+    threading.Thread(
+        target=delayed_scheduler_start,
+        args=(bot, SCHEDULER_DELAY, SCHEDULER_INTERVAL),
+        daemon=True,
+    ).start()
+
+    print(f"Web UI starting on 0.0.0.0:{port}")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

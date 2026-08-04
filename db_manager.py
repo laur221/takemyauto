@@ -1,113 +1,123 @@
-import os
+﻿import os
 import json
+import hashlib
+import base64
 from dotenv import load_dotenv
-import redis
-import psycopg2
-from datetime import datetime
 
 load_dotenv()
 
-class DBManager:
-    """Hybrid Database Manager - PostgreSQL + Redis (Both FREE on Render!)
-    
-    Best of both worlds:
-    - PostgreSQL: Long-term data (wins, raffles) - FREE from Render
-    - Redis (Upstash): Fast session storage that SURVIVES RESTARTS - FREE Upstash
-    
-    Total Cost: $0/month FOREVER
-    Data Persistence: 100% (everything survives everything!)
+# Try imports (optional dependencies)
+try:
+    import redis
+    HAS_REDIS = True
+except ImportError:
+    HAS_REDIS = False
+
+try:
+    import psycopg2
+    HAS_POSTGRES = True
+except ImportError:
+    HAS_POSTGRES = False
+
+
+def _xor_cipher(data_bytes, key):
+    """Simple XOR cipher - NOT secure encryption, just obscures the password.
+    Real security comes from Redis/Postgres access control + HTTPS.
     """
-    
+    key_bytes = key.encode('utf-8')
+    return bytes(b ^ key_bytes[i % len(key_bytes)] for i, b in enumerate(data_bytes))
+
+
+def _encrypt_password(password, secret_key):
+    if not password:
+        return ""
+    data = password.encode('utf-8')
+    encrypted = _xor_cipher(data, secret_key)
+    return base64.b64encode(encrypted).decode('utf-8')
+
+
+def _decrypt_password(encrypted_b64, secret_key):
+    if not encrypted_b64:
+        return ""
+    try:
+        encrypted = base64.b64decode(encrypted_b64)
+        decrypted = _xor_cipher(encrypted, secret_key)
+        return decrypted.decode('utf-8')
+    except Exception:
+        return ""
+
+
+class DBManager:
     def __init__(self):
-        """Initialize both PostgreSQL and Redis connections"""
         self.redis_client = None
         self.redis_available = False
         self.postgres_available = False
-        self.conn_params = None
-        
-        # Initialize Redis (Upstash) for session persistence
+        self.database_url = None
+        self._secret = os.getenv("DB_SECRET", "takemyskins-default-key-2024")
+
         self._init_redis()
-        
-        # Initialize PostgreSQL (Render) for long-term data
         self._init_postgres()
-        
-        # If both available, we're golden!
-        if self.redis_available and self.postgres_available:
-            print("[DB] [OK] HYBRID MODE: PostgreSQL + Redis")
+
+        if self.postgres_available:
             self.setup_db()
-        elif self.postgres_available:
-            print("[DB] [WARN] PostgreSQL only (no session persistence across restarts)")
-            self.setup_db()
-        elif self.redis_available:
-            print("[DB] [WARN] Redis only (limited data, no relational queries)")
-        else:
-            print("[DB] [INFO] No databases connected (running in standalone memory mode)")
-    
+
+        modes = []
+        if self.postgres_available:
+            modes.append("PostgreSQL")
+        if self.redis_available:
+            modes.append("Redis")
+        mode_str = " + ".join(modes) if modes else "Memory"
+        print(f"[DB] Mode: {mode_str}")
+
     def _init_redis(self):
-        """Initialize Redis connection to Upstash"""
         redis_url = os.getenv("REDIS_URL")
-        
         if redis_url:
-            print("[DB] Connecting to Upstash Redis...")
             try:
-                self.redis_client = redis.from_url(redis_url, decode_responses=True, ssl_cert_reqs="required")
+                self.redis_client = redis.from_url(
+                    redis_url, decode_responses=True,
+                    ssl_cert_reqs="required"
+                )
                 self.redis_client.ping()
-                print("[DB] [OK] Upstash Redis connected!")
                 self.redis_available = True
+                print("[DB] Redis connected")
             except Exception as e:
-                print(f"[DB] [WARN] Redis failed: {e}")
+                print(f"[DB] Redis failed: {e}")
         else:
-            # Try local Redis
-            try:
-                self.redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True, socket_connect_timeout=3)
-                self.redis_client.ping()
-                print("[DB] [OK] Local Redis connected")
-                self.redis_available = True
-            except:
-                print("[DB] [INFO] No Redis (session won't survive restarts)")
-    
+            print("[DB] No REDIS_URL (set in Render env)")
+
     def _init_postgres(self):
-        """Initialize PostgreSQL connection from Render"""
         database_url = os.getenv("DATABASE_URL")
-        
         if database_url:
-            print("[DB] Connecting to Render PostgreSQL...")
             try:
-                # Test connection
                 conn = psycopg2.connect(database_url)
                 conn.close()
-                print("[DB] [OK] Render PostgreSQL connected!")
                 self.postgres_available = True
                 self.database_url = database_url
+                print("[DB] PostgreSQL connected")
             except Exception as e:
-                print(f"[DB] [WARN] PostgreSQL failed: {e}")
+                print(f"[DB] PostgreSQL failed: {e}")
         else:
-            print("[DB] [INFO] No DATABASE_URL (add Postgres to Render)")
-    
-    def _get_postgres_conn(self):
-        """Get PostgreSQL connection"""
+            print("[DB] No DATABASE_URL (set in Render env)")
+
+    def _get_conn(self):
         if not self.postgres_available:
             return None
-        
         try:
             return psycopg2.connect(self.database_url)
         except Exception as e:
-            print(f"[DB] [ERROR] PostgreSQL connection error: {e}")
+            print(f"[DB] PG connection error: {e}")
             return None
-    
+
     def setup_db(self):
-        """Initialize database structure"""
-        if self.postgres_available:
-            self._setup_postgres_schema()
-    
-    def _setup_postgres_schema(self):
-        """Create PostgreSQL tables"""
+        if not self.postgres_available:
+            return
         try:
-            conn = self._get_postgres_conn()
+            conn = self._get_conn()
             if not conn:
                 return
-            
             cur = conn.cursor()
+
+            # Raffle results
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS wins (
                     id SERIAL PRIMARY KEY,
@@ -117,119 +127,157 @@ class DBManager:
                     date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+
+            # Steam profile (username + encrypted password)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS steam_profile (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    password_encrypted TEXT NOT NULL,
+                    last_login TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
             conn.commit()
             cur.close()
             conn.close()
-            print("[DB] [OK] PostgreSQL schema ready")
+            print("[DB] Schema ready")
         except Exception as e:
-            print(f"[DB] [ERROR] Error setting up PostgreSQL: {e}")
-    
-    def save_raffle(self, name, status, item="None"):
-        """Save raffle to PostgreSQL (long-term) + Redis cache"""
-        # Save to PostgreSQL (permanent)
+            print(f"[DB] Schema error: {e}")
+
+    # ---- Steam Profile ----
+
+    def save_steam_profile(self, username, password):
+        """Save or update Steam credentials (password encrypted)."""
+        encrypted = _encrypt_password(password, self._secret)
         if self.postgres_available:
             try:
-                conn = self._get_postgres_conn()
+                conn = self._get_conn()
                 cur = conn.cursor()
                 cur.execute("""
-                    INSERT INTO wins (raffle_name, status, item_name) 
+                    INSERT INTO steam_profile (username, password_encrypted, last_login)
+                    VALUES (%s, %s, NOW())
+                    ON CONFLICT (id) DO UPDATE SET
+                        username = EXCLUDED.username,
+                        password_encrypted = EXCLUDED.password_encrypted,
+                        last_login = NOW();
+                """ , (username, encrypted))
+                # Keep only latest profile
+                cur.execute("DELETE FROM steam_profile WHERE id != (SELECT id FROM steam_profile ORDER BY last_login DESC LIMIT 1)")
+                conn.commit()
+                cur.close()
+                conn.close()
+                return True
+            except Exception as e:
+                print(f"[DB] Save profile error: {e}")
+                return False
+        return False
+    def get_steam_profile(self):
+        """Get saved Steam credentials. Returns (username, password) or (None, None)."""
+        if self.postgres_available:
+            try:
+                conn = self._get_conn()
+                cur = conn.cursor()
+                cur.execute("SELECT username, password_encrypted FROM steam_profile ORDER BY last_login DESC LIMIT 1")
+                row = cur.fetchone()
+                cur.close()
+                conn.close()
+                if row:
+                    username, encrypted = row
+                    password = _decrypt_password(encrypted, self._secret)
+                    return username, password
+            except Exception as e:
+                print(f"[DB] Get profile error: {e}")
+        return None, None
+
+    def has_steam_profile(self):
+        """Check if a Steam profile is saved."""
+        u, p = self.get_steam_profile()
+        return u is not None and p is not None
+
+    # ---- Session (Redis) ----
+
+    def save_session(self, session_data):
+        if not self.redis_available:
+            print("[DB] No Redis - session not persisted")
+            return
+        try:
+            self.redis_client.set(
+                "session:takemyskins",
+                json.dumps(session_data),
+                ex=86400 * 30
+            )
+            print("[DB] Session saved to Redis (30d)")
+        except Exception as e:
+            print(f"[DB] Session save error: {e}")
+
+    def get_session(self):
+        if not self.redis_available:
+            return None
+        try:
+            data = self.redis_client.get("session:takemyskins")
+            if data:
+                print("[DB] Session restored from Redis")
+                return json.loads(data)
+        except Exception as e:
+            print(f"[DB] Session get error: {e}")
+        return None
+
+    def session_exists(self):
+        if not self.redis_available:
+            return False
+        try:
+            return self.redis_client.exists("session:takemyskins") > 0
+        except Exception:
+            return False
+
+    def clear_session(self):
+        if self.redis_available:
+            try:
+                self.redis_client.delete("session:takemyskins")
+                print("[DB] Session cleared")
+            except Exception as e:
+                print(f"[DB] Session clear error: {e}")
+
+    # ---- Raffles/Wins ----
+
+    def save_raffle(self, name, status, item="None"):
+        if self.postgres_available:
+            try:
+                conn = self._get_conn()
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO wins (raffle_name, status, item_name)
                     VALUES (%s, %s, %s)
                     ON CONFLICT (raffle_name) DO UPDATE SET status = EXCLUDED.status;
                 """, (name, status, item))
                 conn.commit()
                 cur.close()
                 conn.close()
-                print(f"[DB] [OK] Saved to PostgreSQL: {name} = {status}")
             except Exception as e:
-                print(f"[DB] [ERROR] PostgreSQL error: {e}")
-        
-        # Also cache in Redis (fast)
+                print(f"[DB] Save raffle error: {e}")
+
         if self.redis_available:
             try:
-                data = {
-                    "status": status,
-                    "item_name": item,
-                    "date": datetime.now().isoformat()
-                }
-                self.redis_client.hset(f"wins:{name}", mapping=data)
-                self.redis_client.sadd("wins:list", name)
-                print(f"[DB] [OK] Cached in Redis: {name}")
-            except Exception as e:
-                print(f"[DB] [WARN] Redis cache error: {e}")
-    
+                self.redis_client.hset(f"w:{name}", mapping={
+                    "status": status, "item": item
+                })
+            except Exception:
+                pass
+
     def get_stats(self):
-        """Get stats from PostgreSQL (true data!)
-        
-        Returns: (total_raffles, list_of_wins)
-        """
         if self.postgres_available:
             try:
-                conn = self._get_postgres_conn()
+                conn = self._get_conn()
                 cur = conn.cursor()
-                
-                # Total raffles
                 cur.execute("SELECT COUNT(*) FROM wins")
                 total = cur.fetchone()[0]
-                
-                # Wins
                 cur.execute("SELECT * FROM wins WHERE status = 'WON' ORDER BY date DESC")
                 wins = cur.fetchall()
-                
                 cur.close()
                 conn.close()
-                
-                print(f"[DB] [OK] Stats from PostgreSQL: {total} raffles, {len(wins)} wins")
                 return total, wins
             except Exception as e:
-                print(f"[DB] [ERROR] Error getting stats: {e}")
-                return 0, []
-        
+                print(f"[DB] Stats error: {e}")
         return 0, []
-    
-    def save_session(self, session_data):
-        """Save browser session to Redis (PERSISTS ACROSS RESTARTS!)"""
-        if not self.redis_available:
-            print("[DB] [WARN] Redis not available, session not saved")
-            return
-        
-        try:
-            # Save to Redis with 30-day expiry
-            self.redis_client.set("session:browser", json.dumps(session_data), ex=86400*30)
-            print("[DB] [OK] Session saved to Redis (30 days, SURVIVES RESTARTS!)")
-        except Exception as e:
-            print(f"[DB] [ERROR] Error saving session: {e}")
-    
-    def get_session(self):
-        """Retrieve browser session from Redis (SURVIVES RESTARTS!)"""
-        if not self.redis_available:
-            return None
-        
-        try:
-            session_json = self.redis_client.get("session:browser")
-            if session_json:
-                print("[DB] [OK] Session restored from Redis (NO re-login needed!)")
-                return json.loads(session_json)
-            print("[DB] [INFO] No session found")
-            return None
-        except Exception as e:
-            print(f"[DB] [ERROR] Error getting session: {e}")
-            return None
-    
-    def session_exists(self):
-        """Check if valid session exists in Redis"""
-        if not self.redis_available:
-            return False
-        
-        try:
-            return self.redis_client.exists("session:browser") > 0
-        except:
-            return False
-    
-    def clear_session(self):
-        """Clear session from Redis"""
-        if self.redis_available:
-            try:
-                self.redis_client.delete("session:browser")
-                print("[DB] [OK] Session cleared")
-            except Exception as e:
-                print(f"[DB] [ERROR] Error clearing session: {e}")

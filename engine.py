@@ -1,141 +1,173 @@
-from seleniumbase import Driver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-import json
-import requests
-import secrets
-import time
-import threading
+﻿import json
 import os
-import tempfile
-import urllib.parse
+import threading
+import time
+
+import requests
+
+API_BASE = "https://api.takemyskins.com"
+FRONTEND_VERSION = "23.07.2026_7dade"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SESSION_FILE = os.path.join(BASE_DIR, "user_session", "tms_cookies.json")
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 
 
 class RaffleBot:
     def __init__(self, db):
         self.db = db
-        self.session_dir = "./user_session"
+        self.session_dir = os.path.join(BASE_DIR, "user_session")
+        self._http = None
+        self._csrf_token = None
         self._check_lock = threading.Lock()
         self._scheduler_thread = None
         self._scheduler_stop_event = threading.Event()
 
     # ── helpers ──────────────────────────────────────────────────────────
 
-    def _is_logged_in(self, driver, log):
-        """Detect if user is authenticated on takemyskins.com.
-        
-        Checks multiple signals in priority order:
-        1. Profile/avatar element visible
-        2. No "login" button on the page
-        3. Cookie presence for Steam/takemyskins session
-        Returns True if logged in, False otherwise.
-        """
+    def _session_file(self):
+        return os.path.join(self.session_dir, "tms_cookies.json")
+
+    def save_cookies(self, cookie_list, log=None):
+        os.makedirs(self.session_dir, exist_ok=True)
+        payload = {
+            "cookies": cookie_list,
+            "saved_at": time.time(),
+        }
+        with open(self._session_file(), "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        if log:
+            log("[SESSION] Cookies salvate local")
+        self.db.save_session(payload)
+
+    def load_cookies(self, log=None):
+        data = None
         try:
-            # Signal 1: profile avatar / username element
-            for sel in [
-                "img[alt*='avatar']", "img[class*='avatar']",
-                "[class*='user']", "[class*='profile']",
-                "a[href*='profile']", "[data-testid*='user']",
-            ]:
+            if os.path.exists(self._session_file()):
+                with open(self._session_file(), "r", encoding="utf-8") as f:
+                    data = json.load(f)
+        except Exception:
+            data = None
+        if not data:
+            data = self.db.get_session()
+        if not data:
+            if log:
+                log("[SESSION] Nu exista cookies salvate")
+            return None
+        return data.get("cookies") or []
+
+    def _build_http(self, log=None):
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json, text/plain, */*",
+            "X-Frontend-Version": FRONTEND_VERSION,
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": "https://takemyskins.com",
+            "Referer": "https://takemyskins.com/",
+        })
+        cookies = self.load_cookies(log)
+        if cookies:
+            for c in cookies:
                 try:
-                    if driver.is_element_visible(sel):
-                        return True
+                    if not c.get("name") or c.get("value") is None:
+                        continue
+                    session.cookies.set(
+                        c["name"],
+                        c["value"],
+                        domain=c.get("domain") or "takemyskins.com",
+                        path=c.get("path") or "/",
+                        secure=bool(c.get("secure")),
+                    )
                 except Exception:
                     continue
+        return session
 
-            # Signal 2: cookies that indicate a Steam session
-            cookies = driver.get_cookies()
-            steam_cookies = [c for c in cookies if "steam" in c.get("domain", "").lower()
-                             or "steam" in c.get("name", "").lower()]
-            if steam_cookies:
-                return True
-
-            # Signal 3: no login/sign-in link visible
-            login_indicators = [
-                "Login", "Sign in", "Log in", "Sign-in", "Log-in"
-            ]
-            page_text = driver.execute_script("return document.body.innerText || '';")
-            has_login_link = any(indicator.lower() in page_text.lower() for indicator in login_indicators)
-            if not has_login_link:
-                return True
-        except Exception as e:
-            log(f"[AUTH] Login detection error: {e}")
-
-        return False
-
-    def _find_join_button(self, driver, log):
-        """Find and click the Join button using robust strategies.
-        
-        Strategy order:
-        1. XPath text match (works regardless of CSS class names)
-        2. Button text content via JavaScript
-        3. Common CSS patterns (fallback)
-        """
-        strategies = [
-            # Strategy 1: XPath by visible text (most resilient)
-            ("xpath", "//button[contains(translate(text(), 'JOIN', 'join'), 'join')]"),
-            ("xpath", "//button[contains(translate(., 'JOIN', 'join'), 'join')]"),
-            ("xpath", "//a[contains(translate(text(), 'JOIN', 'join'), 'join')]"),
-            ("xpath", "//*[contains(translate(text(), 'JOIN', 'join'), 'join') and (self::button or self::a)]"),
-            # Strategy 2: CSS with common join patterns
-            ("css", "button[class*='join']"),
-            ("css", "a[class*='join']"),
-            ("css", "[data-action*='join']"),
-            ("css", "[data-testid*='join']"),
-            # Strategy 3: Broad button matches (last resort)
-            ("css", "button._base_g0vst_1"),
-        ]
-
-        for strategy_type, selector in strategies:
-            try:
-                if strategy_type == "xpath":
-                    elements = driver.find_elements(By.XPATH, selector)
-                else:
-                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
-
-                for el in elements:
-                    if not el.is_displayed():
-                        continue
-                    text = (el.text or "").strip().lower()
-                    if "join" in text or "enter" in text or "participate" in text:
-                        try:
-                            el.click()
-                            log(f"✅ Join button clicked via {strategy_type}: '{selector}'")
-                            return True
-                        except Exception:
-                            # Retry with JS click
-                            try:
-                                driver.execute_script("arguments[0].click();", el)
-                                log(f"✅ Join button JS-clicked via {strategy_type}: '{selector}'")
-                                return True
-                            except Exception:
-                                continue
-            except Exception:
-                continue
-
-        # Last resort: JavaScript-based button search
+    def _set_csrf(self, session, log=None):
         try:
-            result = driver.execute_script("""
-                const buttons = document.querySelectorAll('button, a, [role="button"]');
-                for (const btn of buttons) {
-                    const text = (btn.textContent || '').trim().toLowerCase();
-                    if (text.includes('join') || text.includes('enter')) {
-                        if (btn.offsetParent !== null) {
-                            btn.click();
-                            return 'clicked';
-                        }
-                    }
-                }
-                return 'not_found';
-            """)
-            if result == "clicked":
-                log("✅ Join button clicked via JavaScript fallback")
-                return True
+            r = session.get(
+                f"{API_BASE}/root",
+                headers={"Accept": "application/json, text/plain, */*"},
+                timeout=20,
+            )
+            data = r.json()
+            token = data.get("token")
+            if token:
+                self._csrf_token = token
+                session.headers["X-CSRF-Token"] = token
+                if log:
+                    log("[AUTH] CSRF token obtinut din /root")
+            return data
         except Exception as e:
-            log(f"JS fallback error: {e}")
+            if log:
+                log(f"[AUTH] Nu am putut lua CSRF din /root: {e}")
+            return {}
 
-        return False
+    def _ensure_session(self, log=None):
+        if self._http is None:
+            self._http = self._build_http(log)
+        return self._http
+
+    # ── API methods ──────────────────────────────────────────────────────
+
+    def fetch_root(self, log=None):
+        session = self._ensure_session(log)
+        return self._set_csrf(session, log)
+
+    def list_active_giveaways(self, log=None, page=1, per_page=50):
+        session = self._ensure_session(log)
+        params = {"page": page, "per_page": per_page}
+        r = session.get(
+            f"{API_BASE}/giveaway/active_giveaways",
+            params=params,
+            timeout=20,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def show_giveaway(self, segment, log=None):
+        session = self._ensure_session(log)
+        r = session.get(f"{API_BASE}/giveaway/show/{segment}", timeout=20)
+        r.raise_for_status()
+        return r.json()
+
+    def join_giveaway(self, ref, log=None):
+        session = self._ensure_session(log)
+        r = session.post(
+            f"{API_BASE}/giveaway/join_giveaway/{ref}",
+            json={},
+            timeout=20,
+        )
+        try:
+            return r.json()
+        except Exception:
+            return {"status": "error", "error_message": r.text[:200]}
+
+    def check_reward_conditions(self, condition, ga_id, log=None):
+        session = self._ensure_session(log)
+        r = session.post(
+            f"{API_BASE}/giveaway/check_reward_conditions",
+            json={"condition": condition, "ga_id": ga_id},
+            timeout=20,
+        )
+        try:
+            return r.json()
+        except Exception:
+            return {"status": "error", "error_message": r.text[:200]}
+
+    def get_conditions(self, id_or_code, log=None):
+        session = self._ensure_session(log)
+        r = session.post(
+            f"{API_BASE}/giveaway/get_conditions",
+            json={"id_or_code": id_or_code},
+            timeout=20,
+        )
+        try:
+            return r.json()
+        except Exception:
+            return {"status": "error", "error_message": r.text[:200]}
 
     # ── main methods ─────────────────────────────────────────────────────
 
@@ -149,143 +181,94 @@ class RaffleBot:
             log("O verificare ruleaza deja. Sar peste executia paralela.")
             return "Deja ruleaza"
 
-        driver = Driver(
-            uc=True,
-            user_data_dir=self.session_dir,
-            headless=is_headless,
-            agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
-                         "--disable-extensions,--memory-pressure-off"
-        )
         try:
-            log("Se deschide browserul...")
+            session = self._ensure_session(log)
+            root = self._set_csrf(session, log)
+            if not root:
+                log("[API] Eroare la init /root. Verifica reteaua.")
+                return "Eroare"
 
-            # Step 1: Navigate to the domain FIRST (required by WebDriver for cookie injection)
-            driver.get("https://takemyskins.com/")
-            time.sleep(2)
+            log("[API] Se listeaza raflele active...")
+            data = self.list_active_giveaways(log)
+            giveaways = data.get("giveaways") or []
+            total_info = data.get("total") or {}
+            total = total_info.get("active_total") if isinstance(total_info, dict) else total_info
+            log(f"[API] {len(giveaways)} rafle pe pagina ({total} active).")
 
-            # Step 2: Restore session from Redis (cookies need domain to be loaded)
-            restored = self.restore_session_from_redis(driver, log)
-            if restored:
-                # Refresh so cookies take effect
-                driver.get("https://takemyskins.com/")
-                time.sleep(3)
+            joined_count = 0
+            skipped_conditions = 0
+            already_joined = 0
 
-            # Step 3: Check login state
-            logged_in = self._is_logged_in(driver, log)
-            log(f"[AUTH] Login status: {'LOGGED IN' if logged_in else 'NOT LOGGED IN'}")
-
-            if not is_headless:
-                log("Astept sa te loghezi manual...")
-                return "Login Manual Deschis"
-
-            if not logged_in:
-                log("[AUTH] ⚠️ NOT LOGGED IN - raffle check will likely fail.")
-                log("[AUTH] Please use the QR login button in the web UI first.")
-                # Still try, but log warning
-
-            # Step 4: Find raffle cards using generic selectors (not auto-generated CSS classes)
-            time.sleep(3)
-            card_selectors = [
-                "a[href*='/raffle/']",
-                "a[href*='/giveaway/']",
-                "[class*='raffle'] a",
-                "[class*='card'] a[href]",
-                "a[class*='_link']",          # CSS module fallback
-                "a[href*='takemyskins.com']",  # any internal link
-            ]
-
-            cards = []
-            for sel in card_selectors:
-                found = driver.find_elements("css selector", sel)
-                if found:
-                    cards = found
-                    break
-
-            # Filter to likely raffle cards (have link + look like raffle entries)
-            raffle_cards = []
-            seen_hrefs = set()
-            for c in cards:
-                href = c.get_attribute("href") or ""
-                if not href or href in seen_hrefs:
-                    continue
-                if any(kw in href.lower() for kw in ["raffle", "giveaway", "competition"]):
-                    seen_hrefs.add(href)
-                    raffle_cards.append(c)
-
-            if not raffle_cards:
-                # Broader fallback: take any linked card that looks substantial
-                for c in cards:
-                    href = c.get_attribute("href") or ""
-                    if href and href not in seen_hrefs and href.startswith("http"):
-                        seen_hrefs.add(href)
-                        raffle_cards.append(c)
-
-            log(f"Am gasit {len(raffle_cards)} rafle pe pagina.")
-
-            # Step 5: Process each raffle
-            for card in raffle_cards:
+            for g in giveaways:
                 try:
-                    card_text = (card.text or "").lower()
-                    if "you're in" in card_text or "entered" in card_text:
-                        log("Sunt deja inscris la o rafla, trec mai departe.")
-                        continue
-                except Exception:
-                    pass
-
-                link = card.get_attribute("href")
-                if not link:
-                    continue
-
-                log(f"Incerc sa intru in rafla: {link}")
-
-                try:
-                    driver.execute_script(f"window.open('{link}', '_blank');")
-                    driver.switch_to.window(driver.window_handles[-1])
-                    time.sleep(3)
-
-                    joined = self._find_join_button(driver, log)
+                    gid = g.get("id")
+                    segment = g.get("custom_url_segment") or gid
+                    name = g.get("name") or f"raffle-{gid}"
+                    joined = bool(g.get("joined") or g.get("is_joined"))
 
                     if joined:
-                        self.db.save_raffle(link, "JOINED")
-                        time.sleep(2)
+                        already_joined += 1
+                        log(f"[OK] Deja inscris: {name} (#{gid})")
+                        continue
+
+                    log(f"-> Verific {name} (#{gid})...")
+                    cond_data = self.get_conditions(segment, log)
+                    cond_inner = cond_data.get("data") or cond_data
+
+                    if cond_inner.get("is_joined"):
+                        already_joined += 1
+                        log(f"[OK] Deja inscris (detail): {name}")
+                        continue
+
+                    conditions = cond_inner.get("conditions") or {}
+                    if conditions:
+                        pending = [
+                            code for code, c in conditions.items()
+                            if code != "join" and not c.get("verified")
+                        ]
+                        if pending:
+                            log(f"  -> Verific conditiile: {', '.join(pending)}")
+                            for code in pending:
+                                try:
+                                    check = self.check_reward_conditions(code, gid, log)
+                                    if check.get("verified"):
+                                        log(f"    [OK] {code} verificat")
+                                    else:
+                                        log(f"    [WARN] {code}: {check.get('error_message') or 'failed'}")
+                                except Exception as e:
+                                    log(f"    [ERR] check {code}: {e}")
+                            conditions = self.get_conditions(segment, log)
+                            cond_inner = conditions.get("data") or conditions
+                            still_pending = [
+                                code for code, c in (cond_inner.get("conditions") or {}).items()
+                                if code != "join" and not c.get("verified")
+                            ]
+                            if still_pending:
+                                skipped_conditions += 1
+                                log(f"[WAIT] {name}: conditii ramase: {', '.join(still_pending)}")
+                                continue
+
+                    res = self.join_giveaway(gid, log)
+                    status = res.get("status")
+                    if status == "success":
+                        joined_count += 1
+                        self.db.save_raffle(str(gid), "JOINED", item=name)
+                        log(f"[JOINED] INTRAT in {name}!")
                     else:
-                        log(f"Nu am gasit butonul de Join pentru {link} "
-                            f"(posibil task-uri sau deja inscris)")
-                        self.db.save_raffle(link, "JOIN_NOT_FOUND")
-
+                        msg = res.get("error_message") or "unknown"
+                        log(f"[WARN] {name}: {status} ({msg})")
+                        if "need_auth" in str(msg).lower():
+                            log("[AUTH] Nu esti logat. Ruleaza login-ul Steam din UI.")
                 except Exception as e:
-                    log(f"Eroare la procesarea raflei {link}: {str(e)}")
-                finally:
-                    if len(driver.window_handles) > 1:
-                        driver.close()
-                        driver.switch_to.window(driver.window_handles[0])
+                    log(f"Eroare la procesarea raflei: {e}")
 
-            # Step 6: Check wins
-            self.check_wins_internal(driver, log)
-
-            # Step 7: Save session to Redis
-            try:
-                session_data = {
-                    "cookies": driver.get_cookies(),
-                    "last_check": time.time(),
-                    "status": "logged_in" if logged_in else "unknown",
-                }
-                self.db.save_session(session_data)
-                log("[SESSION] ✅ Session saved to Redis (survives restart!)")
-            except Exception as e:
-                log(f"[SESSION] ⚠️ Could not save session: {e}")
-
+            log(f"[API] Gata: {joined_count} noi, {already_joined} deja, "
+                f"{skipped_conditions} cu conditii.")
             return "Gata!"
         except Exception as e:
-            log(f"Eroare generala: {str(e)}")
+            log(f"Eroare generala: {e}")
             return "Eroare"
         finally:
-            try:
-                driver.quit()
-            except Exception:
-                pass
             self._check_lock.release()
 
     # ── scheduler ────────────────────────────────────────────────────────
@@ -302,12 +285,11 @@ class RaffleBot:
             print(msg)
 
         def worker():
-            log("[SCHEDULER] Background scheduler started "
-                f"(interval: {interval_seconds} seconds)")
+            log(f"[SCHEDULER] Background scheduler started (interval: {interval_seconds}s)")
             while not self._scheduler_stop_event.is_set():
-                local_session_exists = os.path.exists(os.path.join(self.session_dir, "Default"))
-                if not self.db.session_exists() and not local_session_exists:
-                    log("[SCHEDULER] Nu exista sesiune salvata. Astept login Steam inainte de verificari automate.")
+                cookies = self.load_cookies(log)
+                if not cookies:
+                    log("[SCHEDULER] Nu exista sesiune. Astept login Steam inainte de verificari.")
                     self._scheduler_stop_event.wait(interval_seconds)
                     continue
 
@@ -324,194 +306,118 @@ class RaffleBot:
     def stop_background_scheduler(self):
         self._scheduler_stop_event.set()
 
-    # ── wins ─────────────────────────────────────────────────────────────
-
-    def check_wins_internal(self, driver, log):
-        try:
-            log("Verific daca exista castiguri noi pe profil...")
-            driver.get("https://takemyskins.com/profile")
-            time.sleep(5)
-
-            prizes = driver.find_elements("css selector",
-                                          "[class*='prize'], [class*='won'], [class*='win']")
-
-            if prizes:
-                log(f"Am gasit {len(prizes)} posibile premii pe pagina.")
-                for prize in prizes:
-                    prize_text = prize.text
-                    if not prize_text:
-                        continue
-                    prize_lower = prize_text.lower()
-                    if any(kw in prize_lower for kw in ["claim", "won", "win", "prize"]):
-                        self.db.save_raffle(
-                            f"Win_{int(time.time())}", "WON",
-                            item=prize_text[:50]
-                        )
-                        log(f"Castig nou detectat: {prize_text[:30]}")
-            else:
-                log("Nu am detectat castiguri noi in aceasta sesiune.")
-
-        except Exception as e:
-            log(f"Eroare la verificarea castigurilor: {str(e)}")
-
-    def close_extra_tabs(self, driver):
-        while len(driver.window_handles) > 1:
-            driver.switch_to.window(driver.window_handles[-1])
-            driver.close()
-        driver.switch_to.window(driver.window_handles[0])
-
-    # ── session ──────────────────────────────────────────────────────────
-
-    def restore_session_from_redis(self, driver, log):
-        """Restore browser session from Redis.
-        
-        IMPORTANT: Must be called AFTER driver.get() so the domain is loaded.
-        After adding cookies, the caller should refresh the page.
-        """
-        try:
-            session_data = self.db.get_session()
-            if not session_data:
-                log("[SESSION] ℹ️ No saved session in Redis")
-                return False
-
-            if "cookies" in session_data:
-                for cookie in session_data["cookies"]:
-                    try:
-                        # Validate cookie before adding
-                        if "name" not in cookie or "value" not in cookie:
-                            continue
-                        driver.add_cookie(cookie)
-                    except Exception:
-                        pass  # Some cookies may fail on domain mismatch
-
-            log("[SESSION] ✅ Restored from Redis - NO re-login needed!")
-            return True
-        except Exception as e:
-            log(f"[SESSION] ⚠️ Could not restore session: {e}")
-            return False
-
-    # ── steam QR ─────────────────────────────────────────────────────────
+    # ── steam QR login (browser, one-time) ───────────────────────────────
 
     def get_steam_qr(self, refresh_ui_callback):
-        """Generate Steam QR code and push raw PNG bytes to the UI callback.
-        
-        Uses undetected-chromedriver mode to bypass Steam protections.
-        """
+        """One-time Steam login via QR. After successful login the takemyskins
+        session cookies are saved and the API bot works without a browser."""
         def fail(message):
             print(f"[QR] {message}")
             refresh_ui_callback({"error": message})
 
         if not self._check_lock.acquire(blocking=False):
-            print("[QR] Browserul este ocupat cu o alta verificare. Incearca din nou in cateva minute.")
-            fail("Browserul este ocupat cu o verificare. Incearca din nou in cateva minute.")
+            print("[QR] Browserul este ocupat. Incearca din nou in cateva minute.")
+            fail("Browserul este ocupat cu o alta verificare.")
             return
 
-        os.makedirs(self.session_dir, exist_ok=True)
-        temp_qr_path = os.path.join(tempfile.gettempdir(), f"steam_qr_{int(time.time())}.png")
         driver = None
         try:
-            driver_options = {
-                "user_data_dir": self.session_dir,
-                "headless": True,
-                "no_sandbox": True,
-                "disable_gpu": True,
-                "use_chromium": True,
-                "page_load_strategy": "eager",
-                "chromium_arg": "--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
-                                "--disable-extensions,--memory-pressure-off",
-            }
-            chrome_bin = os.getenv("CHROME_BIN") or os.getenv("CHROMIUM_BIN")
-            if chrome_bin:
-                driver_options["binary_location"] = chrome_bin
+            from seleniumbase import Driver
 
-            driver = Driver(uc=False, **driver_options)
-
-            print("[QR] Accesez pagina de login Steam...")
+            os.makedirs(self.session_dir, exist_ok=True)
+            driver = Driver(
+                uc=True,
+                user_data_dir=self.session_dir,
+                headless=False,
+                agent=USER_AGENT,
+                chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
+                             "--window-position=-32000,-32000,--window-size=1280,800",
+            )
             driver.set_page_load_timeout(30)
             driver.get("https://store.steampowered.com/login/")
-            time.sleep(10)
+            print("[QR] Pagina Steam incarcata, astept QR...")
+            time.sleep(6)
 
+            qr_bytes = None
             qr_selectors = [
+                "img[src*='blob:']",
                 "div[style*='--qr-bright-color']",
-                "img[src^='blob:']",
-                "xpath://label[contains(text(),'QR')]/following-sibling::div",
-                "xpath://label[contains(text(),'QR')]/..",
-                "div[class*='login_QR_']",
-                "div[class*='qr_code']",
-                "div[class*='QR']",
-                "canvas[class*='qr']",
-                "img[src*='qr']",
+                "div[class*='qr'] img",
                 "canvas",
-                "svg",
             ]
-
-            qr_found = False
-            for _ in range(3):
-                for selector in qr_selectors:
+            for attempt in range(5):
+                for sel in qr_selectors:
                     try:
-                        if selector.startswith("xpath:"):
-                            xpath_val = selector.replace("xpath:", "")
-                            elems = driver.find_elements("xpath", xpath_val)
-                        else:
-                            elems = driver.find_elements("css selector", selector)
-
+                        elems = driver.find_elements("css selector", sel)
                         for el in elems:
                             if el.is_displayed():
-                                print(f"[QR] QR gasit cu selector: {selector}")
-                                el.screenshot(temp_qr_path)
-
-                                with open(temp_qr_path, "rb") as f:
-                                    qr_bytes = f.read()
-
-                                refresh_ui_callback(qr_bytes)
-                                qr_found = True
-                                print(f"[QR] Trimis pe UI: {len(qr_bytes)} bytes raw")
-                                break
-                        if qr_found:
+                                size = el.size or {}
+                                if size.get("width", 0) >= 120:
+                                    shot = el.screenshot_as_png
+                                    if shot and len(shot) > 1000:
+                                        qr_bytes = shot
+                                        break
+                        if qr_bytes:
                             break
-                    except Exception as e:
-                        print(f"[QR] Selector esuat ({selector}): {e}")
+                    except Exception:
                         continue
-                if qr_found:
+                if qr_bytes:
                     break
-                time.sleep(3)
+                time.sleep(2)
 
-            if not qr_found:
-                page_title = ""
-                current_url = ""
-                try:
-                    page_title = driver.title
-                    current_url = driver.current_url
-                except Exception:
-                    pass
-                fail(f"Steam nu a afisat QR-ul. Pagina: {page_title or 'necunoscuta'} ({current_url or 'no url'})")
+            if not qr_bytes:
+                fail("Steam nu a afisat QR-ul (pagina s-ar putea sa ceara user/pass).")
                 return
 
-            print("[QR] Astept scanarea QR-ului (60 sec timeout)...")
-            for attempt in range(60):
+            refresh_ui_callback(qr_bytes)
+            print("[QR] QR trimis pe UI. Astept scanarea...")
+
+            scanned = False
+            scan_timeout = int(os.getenv("STEAM_QR_TIMEOUT", "180"))
+            for _ in range(scan_timeout):
                 try:
-                    url = driver.current_url or ""
-                    if ("steamcommunity.com/id/" in url
-                            or "steamcommunity.com/profiles/" in url
-                            or driver.is_element_visible(".persona")):
-                        print("[QR] ✓ Logare reusita prin QR!")
+                    cookies = driver.get_cookies()
+                    names = {c.get("name") for c in cookies}
+                    if "steamLoginSecure" in names:
+                        scanned = True
                         break
                 except Exception:
                     pass
                 time.sleep(1)
-                if attempt % 10 == 0:
-                    print(f"[QR] Inca astept... ({attempt}/60)")
 
+            if not scanned:
+                fail("Timpul a expirat. QR-ul Steam nu a fost scanat.")
+                return
+
+            print("[QR] Steam autentificat! Completez login-ul la TakeMySkins...")
+            driver.get(f"{API_BASE}/login/steam")
+
+            cookies = None
+            for _ in range(30):
+                try:
+                    current = driver.get_cookies()
+                    names = {c.get("name") for c in current}
+                    if "takemyskins_session" in names:
+                        cookies = current
+                        break
+                except Exception:
+                    pass
+                time.sleep(1)
+
+            if not cookies:
+                fail("Login Steam OK, dar TakeMySkins nu a setat sesiunea. "
+                     "Incearca din nou sau logheaza-te manual in browser.")
+                return
+
+            self.save_cookies(cookies)
+            refresh_ui_callback({"status": "success", "message": "Sesiune TakeMySkins salvata!"})
+            print("[QR] [OK] Sesiune TakeMySkins salvata!")
         except Exception as e:
-            fail(f"Eroare QR: {str(e)}")
+            fail(f"Eroare QR: {e}")
         finally:
             if driver:
                 try:
                     driver.quit()
                 except Exception:
                     pass
-            try:
-                os.remove(temp_qr_path)
-            except Exception:
-                pass
             self._check_lock.release()
