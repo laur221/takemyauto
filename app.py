@@ -186,6 +186,15 @@ def api_session():
     return {"logged_in": False}
 
 
+@app.get("/api/db")
+def api_db():
+    return {
+        "redis": db.redis_available,
+        "postgres": db.postgres_available,
+        "session_in_redis": db.session_exists(),
+    }
+
+
 # ── health (Render) ────────────────────────────────────────────────────
 @app.get("/healthz")
 def healthz():
