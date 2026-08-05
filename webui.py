@@ -361,7 +361,7 @@ function renderPrizes(items, emptyMsg) {
   return items.map(p => {
     const price = typeof p.price === "number" ? p.price.toFixed(2) : "0.00";
     const date = String(p.time_finished || "").slice(0, 10);
-    return '<div class="prize" onclick="window.open(\'' + esc(p.url || "https://takemyskins.com/") + '\',\'_blank\')" title="' + esc(p.name) + '">' +
+    return '<div class="prize" data-url="' + esc(p.url || "https://takemyskins.com/") + '" onclick="window.open(this.dataset.url)" title="' + esc(p.name) + '">' +
       '<div class="thumb">' + (p.image ? '<img src="' + esc(p.image) + '" alt="" loading="lazy">' : '<span style="font-size:22px;">🎁</span>') + '</div>' +
       '<div class="meta">' +
         '<div class="pname">' + esc(p.name) + '</div>' +
