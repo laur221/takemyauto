@@ -138,6 +138,48 @@ INDEX_HTML = """<!DOCTYPE html>
   .qrbox.show { display: flex; }
   .qrbox img { width: 200px; height: 200px; border-radius: 12px; background: #fff; padding: 8px; }
   .qrbox .qstat { font-size: 13px; color: var(--green); }
+  .sessline {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 12px; font-size: 12.5px;
+  }
+  .sessline .ok { color: var(--green); font-weight: 600; }
+  .sessline .no { color: var(--amber); font-weight: 600; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tab {
+    background: var(--card2); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: all .15s;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: #22c55e22; border-color: #22c55e55; color: var(--green); }
+  .tabcount {
+    background: var(--card); border-radius: 10px; padding: 1px 8px;
+    font-size: 11px; color: var(--muted);
+  }
+  .tab.active .tabcount { background: #22c55e33; color: var(--green); }
+
+  .prizes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  @media (max-width: 620px) { .prizes { grid-template-columns: repeat(2, 1fr); } }
+  .prize {
+    background: var(--card2); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; transition: transform .12s, border-color .15s;
+  }
+  .prize:hover { transform: translateY(-2px); border-color: var(--blue); }
+  .prize .thumb { background: #0b0f14; display: flex; align-items: center; justify-content: center; height: 90px; }
+  .prize .thumb img { max-height: 70px; max-width: 100%; }
+  .prize .meta { padding: 8px 10px; }
+  .prize .pname { font-size: 11.5px; font-weight: 600; line-height: 1.25; height: 29px; overflow: hidden; }
+  .prize .prow { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; }
+  .prize .pprice { font-size: 13px; font-weight: 700; color: var(--green); }
+  .prize .pdate { font-size: 10px; color: var(--muted); }
+  .prize .pexterior { font-size: 10px; color: var(--blue); }
+  .empty {
+    grid-column: 1 / -1; background: var(--card2); border-radius: 10px;
+    padding: 16px; color: var(--muted); font-size: 12px; font-style: italic; text-align: center;
+  }
 
   footer { margin-top: 22px; text-align: center; font-size: 10px; color: #2a3350; display: flex; gap: 8px; justify-content: center; align-items: center; }
 </style>
@@ -172,6 +214,7 @@ INDEX_HTML = """<!DOCTYPE html>
           <div class="qstat" id="qrstat"></div>
         </div>
         <div class="statusline" id="qrmsg"></div>
+        <div class="sessline" id="sess">Verific sesiunea...</div>
       </div>
     </div>
 
@@ -196,12 +239,26 @@ INDEX_HTML = """<!DOCTYPE html>
   <div class="card">
     <div class="head">
       <div class="ic" style="background:#8b5cf622;">📊</div>
-      <div><div class="t">Statistici</div><div class="s">Rezultatele si istoricul</div></div>
+      <div><div class="t">Statistici site</div><div class="s">Date live de pe takemyskins.com</div></div>
     </div>
     <div class="body">
       <div class="stats" id="stats"></div>
-      <div class="hist" id="hist"></div>
     </div>
+  </div>
+
+  <div style="height:14px;"></div>
+
+  <div class="card">
+    <div class="head">
+      <div class="ic" style="background:#22c55e22;">🏆</div>
+      <div><div class="t">Prizele mele</div><div class="s">Cistiguri de pe profilul meu</div></div>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="active" id="tabbtn_active">Active <span id="tabcount_active" class="tabcount">0</span></button>
+      <button class="tab" data-tab="history" id="tabbtn_history">Istoric <span id="tabcount_history" class="tabcount">0</span></button>
+    </div>
+    <div class="prizes" id="prizes_active"></div>
+    <div class="prizes" id="prizes_history" style="display:none;"></div>
   </div>
 
   <div style="height:14px;"></div>
@@ -246,7 +303,7 @@ function setRuntime(state) {
 }
 
 function esc(s) {
-  return String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c]));
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 }
 function renderLog(lines) {
   if (!lines || !lines.length) return;
@@ -271,30 +328,59 @@ async function pollLogs() {
   } catch (e) {}
 }
 
-async function pollStats() {
+async function pollWinnings() {
   try {
-    const r = await fetch("/api/stats");
+    const r = await fetch("/api/winnings");
     const d = await r.json();
-    $("stats").innerHTML =
-      '<div class="stat"><div class="l">Rafle verificate</div><div class="v">' + d.total + '</div></div>' +
-      '<div class="stat"><div class="l">Castiguri</div><div class="v" style="color:var(--green)">' + d.wins.length + '</div></div>' +
-      '<div class="stat"><div class="l">Ultima rulare</div><div class="v" style="font-size:18px;padding-top:10px;">' + esc(d.last_run) + '</div></div>';
-    const hist = $("hist");
-    if (d.wins.length) {
-      let rows = '<h3>Istoric recent</h3>';
-      d.wins.slice(0, 15).forEach(w => {
-        const won = String(w.status).toUpperCase() === "WON";
-        rows += '<div class="hist-row"><span>' + (won ? "🏆" : "📅") + '</span>' +
-                '<span class="item">' + esc(String(w.item).slice(0, 34)) + '</span>' +
-                '<span class="chip' + (won ? "" : " other") + '">' + esc(w.status) + '</span>' +
-                '<span class="date">' + esc(String(w.date).slice(0, 16)) + '</span></div>';
-      });
-      hist.innerHTML = rows;
-    } else {
-      hist.innerHTML = '<div style="background:var(--card2);border-radius:10px;padding:12px;color:var(--muted);font-size:12px;font-style:italic;">Niciun castig inca. Ele vor aparea automat aici.</div>';
+    if (d.error) {
+      $("stats").innerHTML = '<div class="empty" style="grid-column:1/-1;">' + esc(d.error) + '</div>';
+      $("sess").innerHTML = '<span class="no">● Nu esti logat</span>';
+      $("sess").title = 'Apasa "Genereaza QR Steam" pentru login';
+      return;
     }
+    $("stats").innerHTML =
+      '<div class="stat"><div class="l">Rafle participat</div><div class="v">' + d.participated + '</div></div>' +
+      '<div class="stat"><div class="l">Prize cistigate</div><div class="v" style="color:var(--green)">' + d.won_count + '</div></div>' +
+      '<div class="stat"><div class="l">Valoare totala</div><div class="v" style="font-size:22px;padding-top:6px;">$' + d.won_cost.toFixed(2) + '</div></div>';
+
+    $("tabcount_active").textContent = d.active_count;
+    $("tabcount_history").textContent = d.history_count;
+
+    const active = $("prizes_active");
+    const history = $("prizes_history");
+    active.innerHTML = renderPrizes(d.active, "Niciun premiu activ. Cele noi apar aici.");
+    history.innerHTML = renderPrizes(d.history, "Niciun premiu luat inca pe cont.");
+
+    $("sess").innerHTML = '<span class="ok">● Conectat: ' + esc(d.nickname || "-") + '</span>';
   } catch (e) {}
 }
+
+function renderPrizes(items, emptyMsg) {
+  if (!items || !items.length) {
+    return '<div class="empty">' + esc(emptyMsg) + '</div>';
+  }
+  return items.map(p => {
+    const price = typeof p.price === "number" ? p.price.toFixed(2) : "0.00";
+    const date = String(p.time_finished || "").slice(0, 10);
+    return '<div class="prize" onclick="window.open(\'' + esc(p.url || "https://takemyskins.com/") + '\',\'_blank\')" title="' + esc(p.name) + '">' +
+      '<div class="thumb">' + (p.image ? '<img src="' + esc(p.image) + '" alt="" loading="lazy">' : '<span style="font-size:22px;">🎁</span>') + '</div>' +
+      '<div class="meta">' +
+        '<div class="pname">' + esc(p.name) + '</div>' +
+        '<div class="prow"><span class="pprice">$' + price + '</span><span class="pdate">' + esc(date) + '</span></div>' +
+        (p.exterior ? '<div class="pexterior">' + esc(p.exterior) + '</div>' : '') +
+      '</div></div>';
+  }).join("");
+}
+
+// tab switching
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    $("prizes_active").style.display = tab.dataset.tab === "active" ? "grid" : "none";
+    $("prizes_history").style.display = tab.dataset.tab === "history" ? "grid" : "none";
+  });
+});
 
 async function pollQr() {
   try {
@@ -326,15 +412,15 @@ async function pollRuntime() {
 
 $("btnqr").addEventListener("click", () => { setStatus("Se genereaza QR...", "var(--cyan)"); post("/api/qr"); });
 $("btncheck").addEventListener("click", () => { post("/api/check"); });
-$("btnrefresh").addEventListener("click", () => { pollStats(); setStatus("Statistici actualizate", "var(--green)"); });
+$("btnrefresh").addEventListener("click", () => { pollWinnings(); setStatus("Statistici actualizate", "var(--green)"); });
 $("btnsteam").addEventListener("click", () => window.open("https://store.steampowered.com/login/", "_blank"));
 $("btntms").addEventListener("click", () => window.open("https://takemyskins.com/", "_blank"));
 
 setInterval(pollLogs, 1000);
-setInterval(pollStats, 5000);
+setInterval(pollWinnings, 30000);
 setInterval(pollQr, 1500);
 setInterval(pollRuntime, 2000);
-pollLogs(); pollStats(); pollQr(); pollRuntime();
+pollLogs(); pollWinnings(); pollQr(); pollRuntime();
 </script>
 </body>
 </html>

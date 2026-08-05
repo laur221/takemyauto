@@ -166,6 +166,26 @@ def api_runtime():
     return {"state": RUNTIME["state"]}
 
 
+@app.get("/api/winnings")
+def api_winnings():
+    try:
+        data = bot.get_profile_prizes(log=bot_log)
+        if data is None:
+            return JSONResponse({"error": "Nu esti logat. Ruleaza login-ul Steam."}, status_code=401)
+        return data
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/session")
+def api_session():
+    user = bot.get_current_user(log=bot_log)
+    if user:
+        return {"logged_in": True, "nickname": user.get("nickname"),
+                "id": user.get("id")}
+    return {"logged_in": False}
+
+
 # ── health (Render) ────────────────────────────────────────────────────
 @app.get("/healthz")
 def healthz():

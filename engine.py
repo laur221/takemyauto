@@ -24,6 +24,8 @@ class RaffleBot:
         self._check_lock = threading.Lock()
         self._scheduler_thread = None
         self._scheduler_stop_event = threading.Event()
+        self._user_id = None
+        self._profile_cache = None
 
     # ── helpers ──────────────────────────────────────────────────────────
 
@@ -168,6 +170,101 @@ class RaffleBot:
             return r.json()
         except Exception:
             return {"status": "error", "error_message": r.text[:200]}
+
+    # ── profile / prizes ────────────────────────────────────────────────
+
+    def get_current_user(self, log=None):
+        """Fetch the logged-in user profile (None if not authenticated)."""
+        try:
+            session = self._ensure_session(log)
+            self._set_csrf(session, log)
+            r = session.get(f"{API_BASE}/profile/user", timeout=20)
+            data = r.json()
+            user = data.get("user")
+            if user:
+                self._user_id = user.get("id")
+                self._profile_cache = user
+            return user
+        except Exception as e:
+            if log:
+                log(f"[API] get_current_user: {e}")
+            return None
+
+    def _normalize_prize(self, entry):
+        item = entry.get("item") or {}
+        return {
+            "name": item.get("steam_market_hash_name") or item.get("skin_name") or "-",
+            "price": item.get("price") or 0,
+            "image": item.get("steam_image") or "",
+            "rarity": item.get("rarity") or "",
+            "exterior": item.get("steam_short_exterior") or "",
+            "weapon": item.get("weapon_name") or "",
+            "time_finished": entry.get("time_finished") or "",
+            "url": entry.get("url") or "",
+            "game": entry.get("game") or "",
+            "inventory_state": entry.get("inventory_state"),
+        }
+
+    def get_profile_prizes(self, log=None):
+        """Won prizes from both profile tabs (active = not taken, history = taken)
+        aggregated over all games, plus the participation count."""
+        def log_m(msg):
+            if log:
+                log(msg)
+
+        user = self.get_current_user(log)
+        if not user:
+            return None
+        uid = user.get("id") or self._user_id
+        if not uid:
+            return None
+
+        active_items, history_items = [], []
+        session = self._ensure_session(log)
+
+        for game in ["csgo", "dota2", "rust"]:
+            for tab, bucket in (("items", active_items), ("items_history", history_items)):
+                try:
+                    r = session.get(
+                        f"{API_BASE}/profile/get_profile_{tab}/{uid}",
+                        params={"game": game},
+                        timeout=20,
+                    )
+                    if r.status_code != 200:
+                        continue
+                    data = r.json()
+                    for entry in data.get("items") or []:
+                        prize = self._normalize_prize(entry)
+                        if prize["name"] != "-":
+                            bucket.append(prize)
+                except Exception as e:
+                    log_m(f"[API] get_profile_{tab} ({game}): {e}")
+
+        participated = 0
+        try:
+            r = session.get(
+                f"{API_BASE}/giveaway/get_giveaways_history",
+                params={"page": 1, "per_page": 1},
+                timeout=20,
+            )
+            total = (r.json().get("total") or {})
+            participated = int(total.get("history_total") or 0) + int(total.get("active_total") or 0)
+        except Exception as e:
+            log_m(f"[API] history total: {e}")
+
+        active_cost = round(sum(p["price"] for p in active_items), 2)
+        history_cost = round(sum(p["price"] for p in history_items), 2)
+        return {
+            "active": active_items,
+            "history": history_items,
+            "active_count": len(active_items),
+            "active_cost": active_cost,
+            "history_count": len(history_items),
+            "won_count": len(active_items) + len(history_items),
+            "won_cost": round(active_cost + history_cost, 2),
+            "participated": participated,
+            "nickname": user.get("nickname"),
+        }
 
     # ── main methods ─────────────────────────────────────────────────────
 
