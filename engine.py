@@ -33,6 +33,8 @@ class RaffleBot:
         return os.path.join(self.session_dir, "tms_cookies.json")
 
     def save_cookies(self, cookie_list, log=None):
+        self._http = None
+        self._csrf_token = None
         os.makedirs(self.session_dir, exist_ok=True)
         payload = {
             "cookies": cookie_list,
@@ -174,21 +176,29 @@ class RaffleBot:
     # ── profile / prizes ────────────────────────────────────────────────
 
     def get_current_user(self, log=None):
-        """Fetch the logged-in user profile (None if not authenticated)."""
-        try:
-            session = self._ensure_session(log)
-            self._set_csrf(session, log)
-            r = session.get(f"{API_BASE}/profile/user", timeout=20)
-            data = r.json()
-            user = data.get("user")
-            if user:
-                self._user_id = user.get("id")
-                self._profile_cache = user
-            return user
-        except Exception as e:
-            if log:
-                log(f"[API] get_current_user: {e}")
-            return None
+        """Fetch the logged-in user profile (None if not authenticated).
+        Retries once with a fresh session so cookies loaded later (Redis) are picked up."""
+        for attempt in range(2):
+            try:
+                session = self._ensure_session(log)
+                self._set_csrf(session, log)
+                r = session.get(f"{API_BASE}/profile/user", timeout=20)
+                data = r.json()
+                user = data.get("user")
+                if user:
+                    self._user_id = user.get("id")
+                    self._profile_cache = user
+                    return user
+                if attempt == 0:
+                    self._http = None
+                    self._csrf_token = None
+            except Exception as e:
+                if attempt == 0:
+                    self._http = None
+                    self._csrf_token = None
+                if log:
+                    log(f"[API] get_current_user: {e}")
+        return None
 
     def _normalize_prize(self, entry):
         item = entry.get("item") or {}
@@ -406,30 +416,45 @@ class RaffleBot:
     # ── steam QR login (browser, one-time) ───────────────────────────────
 
     def get_steam_qr(self, refresh_ui_callback):
-        """One-time Steam login via QR. After successful login the takemyskins
-        session cookies are saved and the API bot works without a browser."""
-        def fail(message):
-            print(f"[QR] {message}")
-            refresh_ui_callback({"error": message})
-
+        """One-time Steam login via QR. Retries if Chrome becomes unresponsive.
+        After successful login the takemyskins session cookies are saved."""
         if not self._check_lock.acquire(blocking=False):
             print("[QR] Browserul este ocupat. Incearca din nou in cateva minute.")
-            fail("Browserul este ocupat cu o alta verificare.")
+            refresh_ui_callback({"error": "Browserul este ocupat cu o alta verificare."})
             return
 
-        driver = None
         try:
-            from seleniumbase import Driver
+            last_err = None
+            for attempt in range(1, 4):
+                try:
+                    self._steam_qr_attempt(refresh_ui_callback)
+                    return
+                except Exception as e:
+                    last_err = str(e)
+                    unstable = "Timed out receiving message from renderer" in last_err
+                    if not unstable or attempt >= 3:
+                        break
+                    print(f"[QR] Chrome instabil (incercarea {attempt}). Reincerc peste 5s...")
+                    time.sleep(5)
+            refresh_ui_callback({"error": last_err or "Eroare QR necunoscuta"})
+        finally:
+            self._check_lock.release()
 
-            os.makedirs(self.session_dir, exist_ok=True)
-            driver = Driver(
-                uc=True,
-                user_data_dir=self.session_dir,
-                headless=False,
-                agent=USER_AGENT,
-                chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
-                             "--window-position=-32000,-32000,--window-size=1280,800",
-            )
+    def _steam_qr_attempt(self, refresh_ui_callback):
+        """Single attempt of the QR login flow. Raises on failure."""
+        from seleniumbase import Driver
+
+        os.makedirs(self.session_dir, exist_ok=True)
+        driver = Driver(
+            uc=True,
+            user_data_dir=self.session_dir,
+            headless=False,
+            agent=USER_AGENT,
+            chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
+                         "--disable-extensions,--no-first-run,--mute-audio,"
+                         "--window-position=-32000,-32000,--window-size=1280,800",
+        )
+        try:
             driver.set_page_load_timeout(30)
             driver.get("https://store.steampowered.com/login/")
             print("[QR] Pagina Steam incarcata, astept QR...")
@@ -463,8 +488,7 @@ class RaffleBot:
                 time.sleep(2)
 
             if not qr_bytes:
-                fail("Steam nu a afisat QR-ul (pagina s-ar putea sa ceara user/pass).")
-                return
+                raise RuntimeError("Steam nu a afisat QR-ul (pagina s-ar putea sa ceara user/pass).")
 
             refresh_ui_callback(qr_bytes)
             print("[QR] QR trimis pe UI. Astept scanarea...")
@@ -483,8 +507,7 @@ class RaffleBot:
                 time.sleep(1)
 
             if not scanned:
-                fail("Timpul a expirat. QR-ul Steam nu a fost scanat.")
-                return
+                raise RuntimeError("Timpul a expirat. QR-ul Steam nu a fost scanat.")
 
             print("[QR] Steam autentificat! Completez login-ul la TakeMySkins...")
             driver.get(f"{API_BASE}/login/steam")
@@ -502,19 +525,15 @@ class RaffleBot:
                 time.sleep(1)
 
             if not cookies:
-                fail("Login Steam OK, dar TakeMySkins nu a setat sesiunea. "
-                     "Incearca din nou sau logheaza-te manual in browser.")
-                return
+                raise RuntimeError("Login Steam OK, dar TakeMySkins nu a setat sesiunea. "
+                                   "Incearca din nou sau logheaza-te manual in browser.")
 
             self.save_cookies(cookies)
             refresh_ui_callback({"status": "success", "message": "Sesiune TakeMySkins salvata!"})
             print("[QR] [OK] Sesiune TakeMySkins salvata!")
-        except Exception as e:
-            fail(f"Eroare QR: {e}")
         finally:
             if driver:
                 try:
                     driver.quit()
                 except Exception:
                     pass
-            self._check_lock.release()
