@@ -207,7 +207,6 @@ INDEX_HTML = """<!DOCTYPE html>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn b-blue" id="btnqr">Genereaza QR Steam</button>
           <button class="btn b-cyan" id="btnsteam">Steam Login</button>
-          <button class="btn b-green" id="btntms">TakeMySkins</button>
         </div>
         <div class="qrbox" id="qrbox">
           <img id="qrimg" alt="Steam QR">
@@ -414,7 +413,6 @@ $("btnqr").addEventListener("click", () => { setStatus("Se genereaza QR...", "va
 $("btncheck").addEventListener("click", () => { post("/api/check"); });
 $("btnrefresh").addEventListener("click", () => { pollWinnings(); setStatus("Statistici actualizate", "var(--green)"); });
 $("btnsteam").addEventListener("click", () => window.open("https://store.steampowered.com/login/", "_blank"));
-$("btntms").addEventListener("click", () => window.open("https://takemyskins.com/", "_blank"));
 
 setInterval(pollLogs, 1000);
 setInterval(pollWinnings, 30000);
