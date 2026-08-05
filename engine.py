@@ -250,29 +250,31 @@ class RaffleBot:
                 except Exception as e:
                     log_m(f"[API] get_profile_{tab} ({game}): {e}")
 
-        participated = 0
+        # authoritative profile stats (same endpoint the site's profile page uses)
+        stats = {}
         try:
             r = session.get(
-                f"{API_BASE}/giveaway/get_giveaways_history",
-                params={"page": 1, "per_page": 1},
+                f"{API_BASE}/profile/get_profile_general_information/{uid}",
+                params={"game": "csgo"},
                 timeout=20,
             )
-            total = (r.json().get("total") or {})
-            participated = int(total.get("history_total") or 0) + int(total.get("active_total") or 0)
+            info = r.json().get("info") or {}
+            stats = info.get("stats") or {}
         except Exception as e:
-            log_m(f"[API] history total: {e}")
+            log_m(f"[API] general information: {e}")
 
         active_cost = round(sum(p["price"] for p in active_items), 2)
         history_cost = round(sum(p["price"] for p in history_items), 2)
+        item_total = len(active_items) + len(history_items)
         return {
             "active": active_items,
             "history": history_items,
             "active_count": len(active_items),
             "active_cost": active_cost,
             "history_count": len(history_items),
-            "won_count": len(active_items) + len(history_items),
-            "won_cost": round(active_cost + history_cost, 2),
-            "participated": participated,
+            "won_count": int(stats.get("giveaway_count") or item_total or 0),
+            "won_cost": float(stats.get("total_ga_value") or 0) or round(active_cost + history_cost, 2),
+            "participated": int(stats.get("user_giveaway_count") or 0),
             "nickname": user.get("nickname"),
         }
 
