@@ -10,3 +10,5 @@ steam_profile/
 temp_qr.png
 data.db
 *.log
+cf-worker/.wrangler/
+cf-worker/dbg.js
