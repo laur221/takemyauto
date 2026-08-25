@@ -316,6 +316,40 @@ async function getWinnings(env) {
   };
 }
 
+// ── keepalive GitHub Actions ───────────────────────────────────────────
+// GitHub dezactiveaza cron-urile dupa 60 zile de inactivitate a repo-ului.
+// Verificam starea workflow-ului G4F si il reactivam automat daca e oprit.
+const GH_WORKFLOW = "repos/laur221/G4f/actions/workflows/341710200";
+
+async function g4fKeepalive(env) {
+  const tok = env.GH_TOKEN;
+  if (!tok) return { skipped: "no GH_TOKEN" };
+  const h = {
+    Authorization: `Bearer ${tok}`,
+    Accept: "application/vnd.github+json",
+    "User-Agent": "takemyauto-worker",
+  };
+  try {
+    const r = await fetch(`https://api.github.com/${GH_WORKFLOW}`, { headers: h });
+    if (!r.ok) return { error: "gh get " + r.status };
+    const d = await r.json();
+    if (d.state === "active") return { state: "active" };
+
+    const en = await fetch(`https://api.github.com/${GH_WORKFLOW}/enable`, {
+      method: "PUT",
+      headers: h,
+    });
+    if (en.ok) {
+      await addLog(env, `[KEEPALIVE] Workflow G4F re-activat automat (era ${d.state}).`);
+      return { reactivated: true, was: d.state };
+    }
+    await addLog(env, `[KEEPALIVE] Reactivare esuata: HTTP ${en.status}`);
+    return { error: "enable " + en.status };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 // ── dashboard ──────────────────────────────────────────────────────────
 function dashboardHTML() {
   return html(`<!DOCTYPE html>
@@ -763,6 +797,10 @@ export default {
       }
     }
 
+    if (path === "/api/g4f-keepalive") {
+      return json(await g4fKeepalive(env));
+    }
+
     if (path === "/admin/session" && request.method === "POST") {
       try {
         const body = await request.json();
@@ -786,5 +824,6 @@ export default {
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runCheck(env));
+    ctx.waitUntil(g4fKeepalive(env));
   },
 };
