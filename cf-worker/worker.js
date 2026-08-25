@@ -350,6 +350,50 @@ async function g4fKeepalive(env) {
   }
 }
 
+// ── G4F panel: lista rulari + dispatch actiuni ─────────────────────────
+const GH_HEADERS = (tok) => ({
+  Authorization: `Bearer ${tok}`,
+  Accept: "application/vnd.github+json",
+  "User-Agent": "takemyauto-worker",
+});
+
+async function g4fRuns(env) {
+  const tok = env.GH_TOKEN;
+  if (!tok) return { error: "no token" };
+  const r = await fetch(
+    "https://api.github.com/repos/laur221/G4f/actions/workflows/341710200/runs?per_page=15",
+    { headers: GH_HEADERS(tok) }
+  );
+  if (!r.ok) return { error: "gh " + r.status };
+  const d = await r.json();
+  return {
+    runs: (d.workflow_runs || []).map((x) => ({
+      id: x.id,
+      event: x.event === "workflow_dispatch" ? "manual" : "auto",
+      status: x.status,
+      conclusion: x.conclusion,
+      created: x.created_at,
+      url: x.html_url,
+    })),
+  };
+}
+
+async function g4fDispatch(env, action) {
+  const ALLOWED = ["extend", "start", "stop", "restart", "renew", "status"];
+  if (!ALLOWED.includes(action)) return { ok: false, error: "actiune invalida" };
+  const tok = env.GH_TOKEN;
+  const r = await fetch(
+    "https://api.github.com/repos/laur221/G4f/actions/workflows/341710200/dispatches",
+    {
+      method: "POST",
+      headers: { ...GH_HEADERS(tok), "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "main", inputs: { action } }),
+    }
+  );
+  if (r.status === 204) return { ok: true, action };
+  return { ok: false, error: "HTTP " + r.status };
+}
+
 // ── dashboard ──────────────────────────────────────────────────────────
 function dashboardHTML() {
   return html(`<!DOCTYPE html>
@@ -700,6 +744,135 @@ setInterval(pollStatus, 30000);
 </html>`);
 }
 
+// ── panou G4F ──────────────────────────────────────────────────────────
+function g4fPanelHTML() {
+  return html(`<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G4F Control Panel</title>
+<style>
+  :root { --bg:#0a0e17; --card:#111827; --card2:#151b2b; --border:#1f2a3f;
+    --text:#e6edf3; --muted:#8b949e; --blue:#3b82f6; --green:#22c55e;
+    --red:#ef4444; --amber:#f59e0b; --purple:#8b5cf6; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background: radial-gradient(1200px 600px at 15% -10%, #16204a55, transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, #2a1a4d44, transparent 55%), var(--bg);
+    color:var(--text); font-family:"Segoe UI",Roboto,Arial,sans-serif; min-height:100vh; padding-bottom:30px; }
+  .wrap { max-width:860px; margin:0 auto; padding:0 20px; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:18px 0;
+    margin-bottom:14px; border-bottom:1px solid var(--border); }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .logo { width:44px; height:44px; border-radius:12px; display:flex; align-items:center;
+    justify-content:center; background:linear-gradient(135deg,#f59e0b,#ef4444); font-size:22px;
+    box-shadow:0 4px 16px #f59e0b55; }
+  h1 { font-size:19px; } .sub { font-size:11.5px; color:var(--muted); }
+  a.back { color:var(--blue); text-decoration:none; font-size:12.5px; }
+  a.back:hover { text-decoration:underline; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:16px;
+    padding:16px; box-shadow:0 6px 18px #0003; margin-bottom:14px; }
+  .card h2 { font-size:15px; margin-bottom:12px; display:flex; align-items:center; gap:9px; }
+  select, button { font-family:inherit; }
+  select { background:var(--card2); color:var(--text); border:1px solid var(--border);
+    border-radius:10px; padding:11px 13px; font-size:13.5px; outline:none; }
+  .btn { border:none; border-radius:10px; padding:11px 18px; font-size:13px; font-weight:600;
+    color:#fff; cursor:pointer; transition:filter .15s, transform .08s; }
+  .btn:hover { filter:brightness(1.12); } .btn:active { transform:scale(.97); }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .msg { font-size:12.5px; color:var(--muted); min-height:18px; margin-top:9px; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th { text-align:left; color:var(--muted); font-weight:500; font-size:11px;
+    padding:7px 9px; border-bottom:1px solid var(--border); }
+  td { padding:8px 9px; border-bottom:1px solid #182236; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:#151c2c; }
+  .badge { display:inline-flex; align-items:center; gap:5px; padding:2px 10px;
+    border-radius:12px; font-size:11px; font-weight:600; }
+  .b-run { background:#3b82f622; color:var(--blue); }
+  .b-ok { background:#22c55e22; color:var(--green); }
+  .b-fail { background:#ef444422; color:var(--red); }
+  .b-manual { background:#8b5cf622; color:var(--purple); }
+  .b-auto { background:#8b949e22; color:var(--muted); }
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--blue);
+    border-top-color:transparent; border-radius:50%; animation:sp 1s linear infinite; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+  a.rlink { color:inherit; text-decoration:none; }
+</style></head><body><div class="wrap">
+<header>
+  <div class="brand"><div class="logo">🎮</div>
+    <div><h1>G4F Control Panel</h1><div class="sub">Conectat la GitHub Actions · cron la 30 min</div></div></div>
+  <a class="back" href="/">← TakeMySkins</a>
+</header>
+
+<div class="card">
+  <h2>🎛 Actiune manuala</h2>
+  <div class="row">
+    <select id="action">
+      <option value="extend">🚀 Extend — +90 min × reclame</option>
+      <option value="start">▶️ Start server</option>
+      <option value="stop">⏹ Stop server</option>
+      <option value="restart">🔄 Restart server</option>
+      <option value="renew">🔓 Renew &amp; Unsuspend</option>
+      <option value="status">📊 Status (timp ramas, online)</option>
+    </select>
+    <button class="btn" style="background:var(--green)" id="btnrun">Ruleaza</button>
+  </div>
+  <div class="msg" id="msg"></div>
+</div>
+
+<div class="card">
+  <h2>📜 Ultimele rulari <span id="cnt" style="font-size:11px;color:var(--muted)"></span></h2>
+  <table>
+    <thead><tr><th>Cand</th><th>Tip</th><th>Rezultat</th></tr></thead>
+    <tbody id="runs"><tr><td colspan="3" style="color:var(--muted)">Se incarca...</td></tr></tbody>
+  </table>
+</div>
+
+<footer style="margin-top:16px;text-align:center;font-size:10px;color:#2a3350;">
+  G4F Auto-Extend pe GitHub Actions · cron la 30 min · reactivare automata
+</footer>
+</div>
+<script>
+const $=(i)=>document.getElementById(i);
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function badge(x){const s=(x||'').toLowerCase();
+ if(s==='completed')return'<span class="badge b-ok">gata</span>';
+ if(s==='in_progress'||s==='queued')return'<span class="badge b-run"><span class="spin"></span> ruleaza</span>';
+ return '<span class="badge b-auto">'+esc(x||'-')+'</span>'}
+function concl(c){if(!c)return'';const m={success:['b-ok','✓ success'],failure:['b-fail','✗ esuat'],cancelled:['b-fail','anulat']};
+ const v=m[c]||['b-auto',c];return '<span class="badge '+v[0]+'">'+esc(v[1])+'</span>'}
+
+async function pollRuns(){
+ try{
+  const r=await fetch('/api/g4f/runs'); const d=await r.json();
+  if(d.error){$('runs').innerHTML='<tr><td colspan="3" style="color:var(--red)">'+esc(d.error)+'</td></tr>';return}
+  $('cnt').textContent='('+d.runs.length+')';
+  $('runs').innerHTML=d.runs.map(x=>{
+   const when=new Date(x.created).toLocaleString('ro-RO');
+   const kind=x.event==='manual'?'<span class="badge b-manual">manual</span>':'<span class="badge b-auto">auto</span>';
+   let st=x.status!=='completed'?badge(x.status):concl(x.conclusion);
+   return '<tr><td>'+esc(when)+'</td><td>'+kind+'</td><td><a class="rlink" href="'+esc(x.url)+'" target="_blank">'+st+'</a></td></tr>';
+  }).join('');
+ }catch(e){}
+}
+
+$('btnrun').onclick=async()=>{
+ $('btnrun').disabled=true; $('msg').textContent='Se trimite comanda...';
+ try{
+  const r=await fetch('/api/g4f/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:$('action').value})});
+  const d=await r.json();
+  $('msg').textContent=d.ok?('Comanda "'+d.action+'" trimisa! Rularea apare mai jos in cateva secunde.') :('Eroare: '+(d.error||'?'));
+  setTimeout(pollRuns,3000);
+ }catch(e){$('msg').textContent='Eroare retea'}
+ $('btnrun').disabled=false;
+};
+
+pollRuns(); setInterval(pollRuns,20000);
+</script></body></html>`);
+}
+
 // ── router ─────────────────────────────────────────────────────────────
 export default {
   async fetch(request, env) {
@@ -708,14 +881,23 @@ export default {
 
     if (path === "/healthz") return json({ ok: true });
 
-    // Link stabil catre tunelul G4f de pe PC-ul utilizatorului
-    if (path === "/g4f") {
-      const target = await env.SESSION_KV.get("g4f:url");
-      if (!target) return html("<h1>G4f offline</h1><p>PC-ul nu e pornit sau tunelul nu e activ.</p><a href='/'>&larr; inapoi</a>");
-      return new Response(null, { status: 302, headers: { Location: target } });
+    if (path === "/") return dashboardHTML();
+
+    // Panoul de control G4F (conectat la GitHub Actions)
+    if (path === "/g4f") return g4fPanelHTML();
+
+    if (path === "/api/g4f/runs") {
+      return json(await g4fRuns(env));
     }
 
-    if (path === "/") return dashboardHTML();
+    if (path === "/api/g4f/run" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      return json(await g4fDispatch(env, body.action));
+    }
+
+    if (path === "/api/g4f-keepalive") {
+      return json(await g4fKeepalive(env));
+    }
 
     if (path === "/api/logs") {
       const after = parseInt(url.searchParams.get("after") || "0", 10);
