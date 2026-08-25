@@ -1,0 +1,45 @@
+{
+  "cookies": [
+    {
+      "domain": ".takemyskins.com",
+      "expiry": 1820442137,
+      "httpOnly": true,
+      "name": "spin_wheel_stat_cookie",
+      "path": "/",
+      "sameSite": "Lax",
+      "secure": true,
+      "value": "eyJpdiI6ImNBTzhqU2NKbURiT3ZzS0tzMi9VNWc9PSIsInZhbHVlIjoiTjRHSnF2eXZtQTlubmw1QjAwM3RqbzZjRkNKeFQ1UUlobndXUDlYOU0zVHArNTNoV28rQ2lUTUdyUEx4SjRyK29IakZsSHFNb0VKTFRYOW4xcnczdzZVaGJpMzN0dTJFckxEblVaSWJ0SEkyK25BY0FKcDNETHMrajBWYnZOWFUiLCJtYWMiOiI2MTQ3NDMzNzY1ZTM4MTk5NzllZmRjOWM4ZTE2NWZiZjIwY2JhNGE1ZTkxOGI3ODIxODQ4MjMwZDUwYTg3MTBlIiwidGFnIjoiIn0%3D"
+    },
+    {
+      "domain": ".takemyskins.com",
+      "expiry": 1786548137,
+      "httpOnly": false,
+      "name": "XSRF-TOKEN",
+      "path": "/",
+      "sameSite": "Lax",
+      "secure": true,
+      "value": "eyJpdiI6Im5jQ21yQm5Da2lLTkJ4ZGtqOGFMN2c9PSIsInZhbHVlIjoiTTI3YThycmdWdENjaTcrckE5WDc2QU9RWWJXZDlEeEMxaEk4azcwSktIcWJqQVh0U21KNWQ3STBJd2FTWFVlNC94ZDI3L0dyNGNnWlhTZUlPZUkvV2lvamkrY2Y2Y1ErOFNJWHZkdWxaUVRVaGpPNVpyUFZ6YjVJRzhtcEp0a0UiLCJtYWMiOiIxM2JkYjQzZTIxNmYwZjk1ZjYxMjg2OWJlNjhlMmI4NDBhODBmYzIzZGFiNWVkMWM5ZTk1MzI1NzY4N2U0MTdiIiwidGFnIjoiIn0%3D"
+    },
+    {
+      "domain": ".takemyskins.com",
+      "expiry": 1786548137,
+      "httpOnly": true,
+      "name": "takemyskins_session",
+      "path": "/",
+      "sameSite": "Lax",
+      "secure": true,
+      "value": "dI7tGRhvP4SaC8Mu4dJ3Qa0HqInb53bLF6CNEyRP"
+    },
+    {
+      "domain": ".takemyskins.com",
+      "expiry": 1820442136,
+      "httpOnly": true,
+      "name": "remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d",
+      "path": "/",
+      "sameSite": "Lax",
+      "secure": true,
+      "value": "eyJpdiI6IkZkV0RxVjh6ZEZoREwvS3VpZk45Znc9PSIsInZhbHVlIjoia3ZmeE0zTWhsM3RPUGN1b1BxN283S2VwcWMwWkNVVnVRWDNEUnZQbk0rNDZNNk93K0g2eThOcVpKWmRvMWhHbDVVWWc5RjMxQXdtUDNYaEJKSldycld1aDhEc1BqYjJXYlRXamJoTFJ1YzZ0bHJFc2hxaFpiaWpmdFErajlCSFMzUU9hU2UvQVpPUHJ0aFFBYXZpTGw2Tm1MaTZLRFVqMW9sRnl4L0FVQ2FYSW51ZWVBSWRTMEltNHMxblVIZFNyN2VDd25sWmFZZ2RkbVRYMTA3S0tkQ1VFYmN2c0JWLzJvV1daS01xQiszOD0iLCJtYWMiOiJjOTY4YTU0ZTAyZThkMjg4ZGM1OTVlNGI5ZTIyMmMwYzJmYjNmNTBmMDMzNmM0NzM2YTZlZGY2NTQwNWRlZjY0IiwidGFnIjoiIn0%3D"
+    }
+  ],
+  "saved_at": 1785882137.4868727
+}
