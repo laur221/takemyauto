@@ -1,4 +1,4 @@
-// TakeMySkins Automator - Cloudflare Worker
+﻿// TakeMySkins Automator - Cloudflare Worker
 // Cron la 6h + dashboard HTML + sesiune persistenta in KV
 
 const API_BASE = "https://api.takemyskins.com";
@@ -744,132 +744,267 @@ setInterval(pollStatus, 30000);
 </html>`);
 }
 
+// Status live G4F din status.json (publicat de fiecare rulare Actions)
+async function g4fLive(env) {
+  const h = { Accept: "application/vnd.github+json", "User-Agent": "takemyauto-worker" };
+  if (env.GH_TOKEN) h.Authorization = `Bearer ${env.GH_TOKEN}`;
+  try {
+    const r = await fetch(
+      "https://api.github.com/repos/laur221/G4f/contents/status.json",
+      { headers: h, cf: { cacheTtl: 0 } }
+    );
+    if (!r.ok) return { error: "gh " + r.status };
+    const d = await r.json();
+    const raw = (d.content || "").replace(/\s/g, "");
+    const bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 // ── panou G4F ──────────────────────────────────────────────────────────
 function g4fPanelHTML() {
   return html(`<!DOCTYPE html>
 <html lang="ro">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
+<title>G4F — Serverul Nicu (Cloud)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>G4F Control Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#0a0e17; --card:#111827; --card2:#151b2b; --border:#1f2a3f;
-    --text:#e6edf3; --muted:#8b949e; --blue:#3b82f6; --green:#22c55e;
-    --red:#ef4444; --amber:#f59e0b; --purple:#8b5cf6; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { background: radial-gradient(1200px 600px at 15% -10%, #16204a55, transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, #2a1a4d44, transparent 55%), var(--bg);
-    color:var(--text); font-family:"Segoe UI",Roboto,Arial,sans-serif; min-height:100vh; padding-bottom:30px; }
-  .wrap { max-width:860px; margin:0 auto; padding:0 20px; }
-  header { display:flex; align-items:center; justify-content:space-between; padding:18px 0;
-    margin-bottom:14px; border-bottom:1px solid var(--border); }
-  .brand { display:flex; align-items:center; gap:12px; }
-  .logo { width:44px; height:44px; border-radius:12px; display:flex; align-items:center;
-    justify-content:center; background:linear-gradient(135deg,#f59e0b,#ef4444); font-size:22px;
-    box-shadow:0 4px 16px #f59e0b55; }
-  h1 { font-size:19px; } .sub { font-size:11.5px; color:var(--muted); }
-  a.back { color:var(--blue); text-decoration:none; font-size:12.5px; }
-  a.back:hover { text-decoration:underline; }
-  .card { background:var(--card); border:1px solid var(--border); border-radius:16px;
-    padding:16px; box-shadow:0 6px 18px #0003; margin-bottom:14px; }
-  .card h2 { font-size:15px; margin-bottom:12px; display:flex; align-items:center; gap:9px; }
-  select, button { font-family:inherit; }
-  select { background:var(--card2); color:var(--text); border:1px solid var(--border);
-    border-radius:10px; padding:11px 13px; font-size:13.5px; outline:none; }
-  .btn { border:none; border-radius:10px; padding:11px 18px; font-size:13px; font-weight:600;
-    color:#fff; cursor:pointer; transition:filter .15s, transform .08s; }
-  .btn:hover { filter:brightness(1.12); } .btn:active { transform:scale(.97); }
-  .btn:disabled { opacity:.5; cursor:not-allowed; }
-  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-  .msg { font-size:12.5px; color:var(--muted); min-height:18px; margin-top:9px; }
-  table { width:100%; border-collapse:collapse; font-size:12.5px; }
-  th { text-align:left; color:var(--muted); font-weight:500; font-size:11px;
-    padding:7px 9px; border-bottom:1px solid var(--border); }
-  td { padding:8px 9px; border-bottom:1px solid #182236; }
-  tr:last-child td { border-bottom:none; }
-  tr:hover td { background:#151c2c; }
-  .badge { display:inline-flex; align-items:center; gap:5px; padding:2px 10px;
-    border-radius:12px; font-size:11px; font-weight:600; }
-  .b-run { background:#3b82f622; color:var(--blue); }
-  .b-ok { background:#22c55e22; color:var(--green); }
-  .b-fail { background:#ef444422; color:var(--red); }
-  .b-manual { background:#8b5cf622; color:var(--purple); }
-  .b-auto { background:#8b949e22; color:var(--muted); }
-  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--blue);
-    border-top-color:transparent; border-radius:50%; animation:sp 1s linear infinite; }
-  @keyframes sp { to { transform:rotate(360deg); } }
-  a.rlink { color:inherit; text-decoration:none; }
-</style></head><body><div class="wrap">
-<header>
-  <div class="brand"><div class="logo">🎮</div>
-    <div><h1>G4F Control Panel</h1><div class="sub">Conectat la GitHub Actions · cron la 30 min</div></div></div>
-  <a class="back" href="/">← TakeMySkins</a>
-</header>
+  :root{
+    --pink:#ff3aa3;--lime:#a3e635;--cyan:#27e1ff;
+    --purple:#7b3aff;--gold:#fbbf24;--red:#ff5c6c;
+    --surface:rgba(16,18,32,0.82);--line:rgba(255,255,255,0.10);--line-2:rgba(255,255,255,0.18);
+    --ink:#f5f7fa;--ink-dim:rgba(255,255,255,0.72);--ink-muted:rgba(255,255,255,0.50);--ink-faint:rgba(255,255,255,0.32);
+    --pixel:'Press Start 2P',monospace;--sans:'Space Grotesk',system-ui,sans-serif;--mono:'Geist Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;font-family:var(--sans);color:var(--ink);
+    background:#0a0814;min-height:100vh;display:flex;flex-direction:column;
+    align-items:center;justify-content:flex-start;padding:20px;position:relative;overflow-y:auto;
+  }
+  .bg{position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(ellipse 80% 60% at 18% 20%, rgba(255,58,163,.18) 0%, transparent 55%),
+      radial-gradient(ellipse 70% 60% at 88% 85%, rgba(123,58,255,.20) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 50% at 50% 110%, rgba(39,225,255,.16) 0%, transparent 60%),
+      #0a0814;}
+  .grid-floor{position:fixed;left:0;right:0;bottom:-10vh;height:55vh;pointer-events:none;z-index:1;
+    background-image:
+      linear-gradient(rgba(255,58,163,.18) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(39,225,255,.18) 1px, transparent 1px);
+    background-size:80px 80px;
+    transform:perspective(700px) rotateX(60deg);transform-origin:50% 0%;
+    mask-image:linear-gradient(to bottom, transparent 0%, black 30%, black 100%);
+    -webkit-mask-image:linear-gradient(to bottom, transparent 0%, black 30%, black 100%);
+    animation:grid-scroll 8s linear infinite;}
+  @keyframes grid-scroll{from{background-position:0 0}to{background-position:0 80px}}
+  .scanlines{position:fixed;inset:0;pointer-events:none;z-index:3;
+    background:repeating-linear-gradient(to bottom, rgba(255,255,255,.02) 0 1px, transparent 1px 3px);}
+  .layout{position:relative;z-index:4;width:100%;max-width:760px;display:flex;
+    align-items:flex-start;justify-content:center;gap:20px;flex-direction:column;align-items:center;}
+  @media(min-width:740px){.layout{flex-direction:row;align-items:flex-start;}.layout .col-main{max-width:360px;}}
+  .col-runs{width:100%;max-width:380px;}
+  .card{position:relative;z-index:4;width:100%;max-width:360px;background:var(--surface);
+    border:2px solid var(--line);border-radius:14px;padding:24px 22px 22px;overflow:hidden;
+    backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%);
+    box-shadow:0 20px 50px rgba(0,0,0,.5);}
+  .card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;
+    background:linear-gradient(90deg,var(--pink),var(--lime),var(--cyan),var(--pink));
+    background-size:200% 100%;animation:rainbow 5s linear infinite;}
+  @keyframes rainbow{from{background-position:0% 0}to{background-position:200% 0}}
+  h1{font-family:var(--pixel);font-size:12px;margin:6px 0 16px;text-align:center;color:#fff;
+    text-shadow:2px 2px 0 var(--pink),4px 4px 0 rgba(0,0,0,.4);letter-spacing:.02em;line-height:1.6;}
+  .status-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .status-pill{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:99px;
+    font-family:var(--pixel);font-size:8px;letter-spacing:.10em;}
+  .status-pill .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+  .status-pill.online{background:rgba(163,230,53,.12);color:var(--lime);}
+  .status-pill.online .dot{background:var(--lime);box-shadow:0 0 8px var(--lime);animation:blink 1.4s infinite;}
+  .status-pill.offline{background:rgba(255,255,255,.05);color:var(--ink-muted);}
+  .status-pill.offline .dot{background:var(--ink-faint);}
+  .status-pill.suspended{background:rgba(255,92,108,.12);color:var(--red);}
+  .status-pill.suspended .dot{background:var(--red);}
+  @keyframes blink{50%{opacity:.35}}
+  .time{font-family:var(--mono);font-size:22px;font-weight:500;letter-spacing:.01em;margin:10px 0 4px;text-align:center;}
+  .time .unit{font-size:11px;color:var(--ink-muted);margin-left:6px;font-weight:400;}
+  .banner{display:none;background:rgba(255,92,108,.10);border:1px solid rgba(255,92,108,.35);
+    border-radius:9px;padding:11px 12px;font-family:var(--mono);font-size:11.5px;color:#ffb3bb;
+    margin:14px 0;line-height:1.6;text-align:left;}
+  .banner.show{display:block;}
+  .extend-row{text-align:center;margin:12px 0 4px;}
+  .extend-btn{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:9px;
+    font-family:var(--pixel);font-size:9px;letter-spacing:.08em;cursor:pointer;
+    border:2px solid rgba(251,191,36,.45);color:var(--gold);background:rgba(251,191,36,.08);transition:all .15s;}
+  .extend-btn:hover:not(:disabled){border-color:var(--gold);background:rgba(251,191,36,.18);box-shadow:0 0 16px rgba(251,191,36,.35);}
+  .extend-btn:active:not(:disabled){transform:translateY(1px);}
+  .extend-btn:disabled{opacity:.4;cursor:not-allowed;transform:none;}
+  .actions{display:flex;gap:8px;margin-top:16px;}
+  .pwr-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;
+    border-radius:9px;font-family:var(--pixel);font-size:9px;letter-spacing:.08em;cursor:pointer;
+    border:2px solid;background:rgba(255,255,255,.03);transition:all .15s;color:var(--ink);}
+  .pwr-btn:active{transform:translateY(1px);}
+  .pwr-btn:disabled{opacity:.4;cursor:not-allowed;transform:none;}
+  .pwr-start{border-color:rgba(163,230,53,.45);color:var(--lime);}
+  .pwr-start:hover:not(:disabled){border-color:var(--lime);background:rgba(163,230,53,.12);box-shadow:0 0 14px rgba(163,230,53,.3);}
+  .pwr-restart{border-color:rgba(39,225,255,.45);color:var(--cyan);}
+  .pwr-restart:hover:not(:disabled){border-color:var(--cyan);background:rgba(39,225,255,.10);box-shadow:0 0 14px rgba(39,225,255,.25);}
+  .pwr-stop{border-color:rgba(255,92,108,.45);color:var(--red);}
+  .pwr-stop:hover:not(:disabled){border-color:var(--red);background:rgba(255,92,108,.12);box-shadow:0 0 14px rgba(255,92,108,.25);}
+  #status{font-family:var(--mono);font-size:11.5px;color:var(--ink-muted);margin-top:14px;min-height:16px;text-align:center;}
+  .res-panel{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);}
+  .res-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .res-panel-title{font-family:var(--pixel);font-size:8px;color:#fff;letter-spacing:.10em;}
+  .res-live{font-family:var(--mono);font-size:9px;color:var(--lime);}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .info-box{background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;padding:9px 10px;}
+  .info-box .k{font-family:var(--pixel);font-size:6.5px;color:var(--ink-muted);letter-spacing:.12em;margin-bottom:5px;}
+  .info-box .v{font-family:var(--mono);font-size:13px;font-weight:700;color:#fff;}
+  table.runs{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10.5px;}
+  table.runs th{text-align:left;font-family:var(--pixel);font-size:7px;color:var(--ink-muted);
+    letter-spacing:.10em;padding:6px 8px;border-bottom:1px solid var(--line);}
+  table.runs td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);}
+  table.runs tr:last-child td{border-bottom:none;}
+  .tag{display:inline-flex;padding:2px 8px;border-radius:99px;font-family:var(--mono);font-size:9px;}
+  .t-ok{background:rgba(163,230,53,.12);color:var(--lime);}
+  .t-fail{background:rgba(255,92,108,.12);color:var(--red);}
+  .t-run{background:rgba(39,225,255,.12);color:var(--cyan);}
+  .t-auto{background:rgba(255,255,255,.06);color:var(--ink-muted);}
+  .t-manual{background:rgba(123,58,255,.15);color:var(--purple);}
+  a.rlink{color:inherit;text-decoration:none;}
+  footer{text-align:center;margin-top:16px;font-family:var(--mono);font-size:9.5px;color:var(--ink-faint);}
+  button{-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+  a.back{position:fixed;top:14px;right:16px;z-index:9;color:var(--cyan);text-decoration:none;
+    font-family:var(--mono);font-size:11px;background:rgba(16,18,32,.7);border:1px solid var(--line);
+    padding:6px 10px;border-radius:8px;}
+</style></head><body>
+  <div class="bg"></div>
+  <div class="grid-floor"></div>
+  <div class="scanlines"></div>
+  <a class="back" href="/">← TMS</a>
 
-<div class="card">
-  <h2>🎛 Actiune manuala</h2>
-  <div class="row">
-    <select id="action">
-      <option value="extend">🚀 Extend — +90 min × reclame</option>
-      <option value="start">▶️ Start server</option>
-      <option value="stop">⏹ Stop server</option>
-      <option value="restart">🔄 Restart server</option>
-      <option value="renew">🔓 Renew &amp; Unsuspend</option>
-      <option value="status">📊 Status (timp ramas, online)</option>
-    </select>
-    <button class="btn" style="background:var(--green)" id="btnrun">Ruleaza</button>
+  <div class="layout">
+  <div class="col-main">
+  <div class="card">
+    <h1>Serverul Nicu<br>PalWorld — CLOUD</h1>
+
+    <div class="status-row">
+      <span class="status-pill offline" id="status-pill">
+        <span class="dot"></span><span id="status-label">SE VERIFICA</span>
+      </span>
+    </div>
+
+    <div class="time"><span id="remaining">--:--:--</span><span class="unit">ramase</span></div>
+
+    <div class="banner" id="warn-banner">
+      Mai sunt sub 30 de minute! Botul extinde automat la fiecare 30 min.
+    </div>
+
+    <div class="extend-row">
+      <button class="extend-btn" id="btn-extend" onclick="run('extend')">+ 90 MIN (AUTO)</button>
+    </div>
+
+    <div class="actions">
+      <button class="pwr-btn pwr-start" id="b-start" onclick="run('start')">PORNESTE</button>
+      <button class="pwr-btn pwr-restart" id="b-restart" onclick="run('restart')">RESTART</button>
+      <button class="pwr-btn pwr-stop" id="b-stop" onclick="run('stop')">OPRESTE</button>
+    </div>
+
+    <div id="status">Conectat la GitHub Actions...</div>
+
+    <!-- AUTO-EXTEND (config live din workflow) -->
+    <div class="res-panel">
+      <div class="res-panel-head">
+        <span class="res-panel-title">AUTO-EXTEND</span>
+        <span class="res-live">ACTIV</span>
+      </div>
+      <div class="info-grid">
+        <div class="info-box"><div class="k">TARGET</div><div class="v">48h</div></div>
+        <div class="info-box"><div class="k">RECLAME / RUN</div><div class="v">max 15</div></div>
+        <div class="info-box"><div class="k">CRON</div><div class="v">30 min</div></div>
+        <div class="info-box"><div class="k">ULTIMA EXTEND</div><div class="v" style="font-size:10px" id="last-extend">—</div></div>
+      </div>
+    </div>
   </div>
-  <div class="msg" id="msg"></div>
-</div>
 
-<div class="card">
-  <h2>📜 Ultimele rulari <span id="cnt" style="font-size:11px;color:var(--muted)"></span></h2>
-  <table>
-    <thead><tr><th>Cand</th><th>Tip</th><th>Rezultat</th></tr></thead>
-    <tbody id="runs"><tr><td colspan="3" style="color:var(--muted)">Se incarca...</td></tr></tbody>
-  </table>
-</div>
+  <div class="col-runs">
+  <div class="card" style="max-width:100%;">
+    <h1 style="margin-bottom:12px;">ISTORIC RULARI</h1>
+    <table class="runs">
+      <thead><tr><th>CAND</th><th>TIP</th><th>REZULTAT</th></tr></thead>
+      <tbody id="runs"><tr><td colspan="3" style="color:var(--ink-muted)">se incarca...</td></tr></tbody>
+    </table>
+  </div>
+  </div>
+  </div>
 
-<footer style="margin-top:16px;text-align:center;font-size:10px;color:#2a3350;">
-  G4F Auto-Extend pe GitHub Actions · cron la 30 min · reactivare automata
-</footer>
-</div>
+<footer>G4F Auto-Extend · GitHub Actions · reactivare automata</footer>
+
 <script>
 const $=(i)=>document.getElementById(i);
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-function badge(x){const s=(x||'').toLowerCase();
- if(s==='completed')return'<span class="badge b-ok">gata</span>';
- if(s==='in_progress'||s==='queued')return'<span class="badge b-run"><span class="spin"></span> ruleaza</span>';
- return '<span class="badge b-auto">'+esc(x||'-')+'</span>'}
-function concl(c){if(!c)return'';const m={success:['b-ok','✓ success'],failure:['b-fail','✗ esuat'],cancelled:['b-fail','anulat']};
- const v=m[c]||['b-auto',c];return '<span class="badge '+v[0]+'">'+esc(v[1])+'</span>'}
+let busy=false;
+
+function setPill(state){
+  const pill=$('status-pill'), lbl=$('status-label');
+  pill.className='status-pill '+state;
+  lbl.textContent=state==='online'?'ONLINE':state==='offline'?'OFFLINE':state==='suspended'?'SUSPENDED':'SE VERIFICA';
+}
+
+async function pollLive(){
+ try{
+  const r=await fetch('/api/g4f/live'); const d=await r.json();
+  if(d.error||!d.ok&&d.error){$('status').textContent='Eroare: '+(d.error||'necunoscut');return}
+  if(d.remainingLabel)$('remaining').textContent=d.remainingLabel;
+  setPill(d.suspended?'suspended':d.online?'online':'offline');
+  const b=$('warn-banner');
+  if(typeof d.remainingSeconds==='number'&&d.remainingSeconds<1800)b.classList.add('show');else b.classList.remove('show');
+  if(d.action){$('last-extend').textContent=(d.action==='extend'&&d.ok)?('+'+(d.addedMinutes||90)+' min'):(d.action+' '+(d.ok?'✓':'✗'));}
+ }catch(e){}
+}
 
 async function pollRuns(){
  try{
   const r=await fetch('/api/g4f/runs'); const d=await r.json();
-  if(d.error){$('runs').innerHTML='<tr><td colspan="3" style="color:var(--red)">'+esc(d.error)+'</td></tr>';return}
-  $('cnt').textContent='('+d.runs.length+')';
+  if(d.error)return;
   $('runs').innerHTML=d.runs.map(x=>{
-   const when=new Date(x.created).toLocaleString('ro-RO');
-   const kind=x.event==='manual'?'<span class="badge b-manual">manual</span>':'<span class="badge b-auto">auto</span>';
-   let st=x.status!=='completed'?badge(x.status):concl(x.conclusion);
-   return '<tr><td>'+esc(when)+'</td><td>'+kind+'</td><td><a class="rlink" href="'+esc(x.url)+'" target="_blank">'+st+'</a></td></tr>';
+   const when=new Date(x.created).toLocaleString('ro-RO',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+   const kind=x.event==='manual'?'<span class="tag t-manual">manual</span>':'<span class="tag t-auto">auto</span>';
+   let res;
+   if(x.status!=='completed')res='<span class="tag t-run">ruleaza...</span>';
+   else if(x.conclusion==='success')res='<span class="tag t-ok">✓ success</span>';
+   else if(x.conclusion==='failure')res='<span class="tag t-fail">✗ esuat</span>';
+   else res='<span class="tag t-auto">'+esc(x.conclusion||'-')+'</span>';
+   return '<tr><td>'+esc(when)+'</td><td>'+kind+'</td><td><a class="rlink" href="'+esc(x.url)+'" target="_blank">'+res+'</a></td></tr>';
   }).join('');
  }catch(e){}
 }
 
-$('btnrun').onclick=async()=>{
- $('btnrun').disabled=true; $('msg').textContent='Se trimite comanda...';
+async function run(action){
+ if(busy)return; busy=true;
+ $('status').textContent='Trimit "'+action+'" catre GitHub Actions...';
+ document.querySelectorAll('.extend-btn,.pwr-btn').forEach(b=>b.disabled=true);
  try{
-  const r=await fetch('/api/g4f/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:$('action').value})});
+  const r=await fetch('/api/g4f/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action})});
   const d=await r.json();
-  $('msg').textContent=d.ok?('Comanda "'+d.action+'" trimisa! Rularea apare mai jos in cateva secunde.') :('Eroare: '+(d.error||'?'));
-  setTimeout(pollRuns,3000);
- }catch(e){$('msg').textContent='Eroare retea'}
- $('btnrun').disabled=false;
-};
+  $('status').textContent=d.ok?('Comanda pornita! Statusul se actualizeaza in ~1-2 min.') :('Eroare: '+(d.error||'?'));
+  setTimeout(()=>{pollRuns();},4000);
+  setTimeout(()=>{pollRuns();pollLive();},90000);
+ }catch(e){$('status').textContent='Eroare retea'}
+ document.querySelectorAll('.extend-btn,.pwr-btn').forEach(b=>b.disabled=false);
+ busy=false;
+}
+window.run=run;
 
-pollRuns(); setInterval(pollRuns,20000);
+pollLive();pollRuns();
+setInterval(pollLive,30000);
+setInterval(pollRuns,20000);
 </script></body></html>`);
 }
 
@@ -888,6 +1023,10 @@ export default {
 
     if (path === "/api/g4f/runs") {
       return json(await g4fRuns(env));
+    }
+
+    if (path === "/api/g4f/live") {
+      return json(await g4fLive(env));
     }
 
     if (path === "/api/g4f/run" && request.method === "POST") {
