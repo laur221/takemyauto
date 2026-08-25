@@ -319,94 +319,351 @@ async function getWinnings(env) {
 // ── dashboard ──────────────────────────────────────────────────────────
 function dashboardHTML() {
   return html(`<!DOCTYPE html>
-<html lang="ro"><head><meta charset="utf-8">
+<html lang="ro">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TakeMySkins Bot</title>
+<title>TakeMySkins Automator</title>
 <style>
-:root{--bg:#0a0e17;--card:#111827;--card2:#151b2b;--border:#1f2a3f;--text:#e6edf3;--muted:#8b949e;--blue:#3b82f6;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--purple:#8b5cf6}
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:radial-gradient(1000px 500px at 15% -10%,#16204a55,transparent 60%),radial-gradient(800px 400px at 100% 0%,#2a1a4d44,transparent 55%),var(--bg);color:var(--text);font-family:"Segoe UI",Roboto,Arial,sans-serif;min-height:100vh;padding-bottom:30px}
-.wrap{max-width:900px;margin:0 auto;padding:0 18px}
-header{display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid var(--border);margin-bottom:14px}
-h1{font-size:18px}.sub{font-size:11.5px;color:var(--muted)}
-.pill{background:var(--card2);border:1px solid var(--border);border-radius:20px;padding:5px 13px;font-size:12px;font-weight:600;display:flex;gap:8px;align-items:center}
-.dot{width:9px;height:9px;border-radius:50%;background:#3f4650}
-.dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
-.dot.err{background:var(--red)}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:720px){.grid{grid-template-columns:1fr}}
-.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
-.card h2{font-size:14px;margin-bottom:10px}
-.btn{border:none;border-radius:9px;padding:10px 15px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;font-family:inherit}
-.btn:hover{filter:brightness(1.12)}.btn:disabled{opacity:.5;cursor:not-allowed}
-.b-green{background:var(--green)}.b-blue{background:var(--blue)}.b-gray{background:#1f2937;color:var(--muted)}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
-.stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
-.stat .v{font-size:26px;font-weight:700;margin-top:6px}.stat .l{font-size:11.5px;color:var(--muted)}
-.tabs{display:flex;gap:8px;margin:10px 0}
-.tab{background:var(--card2);color:var(--muted);border:1px solid var(--border);border-radius:9px;padding:7px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
-.tab.active{background:#22c55e22;border-color:#22c55e55;color:var(--green)}
-.prizes{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:9px}
-.prize{background:var(--card2);border:1px solid var(--border);border-radius:11px;overflow:hidden;cursor:pointer}
-.prize:hover{border-color:var(--blue)}
-.prize .thumb{background:#0b0f14;height:82px;display:flex;align-items:center;justify-content:center}
-.prize img{max-height:66px;max-width:90%}
-.prize .meta{padding:7px 9px}
-.pname{font-size:11px;font-weight:600;height:27px;overflow:hidden;line-height:1.25}
-.prow{display:flex;justify-content:space-between;margin-top:4px}
-.pprice{color:var(--green);font-weight:700;font-size:12px}.pdate{font-size:9.5px;color:var(--muted)}
-.empty{background:var(--card2);border-radius:9px;padding:13px;color:var(--muted);font-size:12px;font-style:italic;text-align:center;grid-column:1/-1}
-#log{background:#0b0f14;border:1px solid #1a2a45;border-radius:10px;padding:9px;height:210px;overflow-y:auto;font-family:Consolas,monospace;font-size:11px;line-height:1.65;margin-top:10px}
-.line{white-space:pre-wrap;word-break:break-word;color:var(--blue)}.line.g{color:var(--green)}.line.r{color:var(--red)}.line.y{color:var(--amber)}.line.c{color:#22d3ee}.line.m{color:var(--muted)}
-.sessline{margin-top:8px;font-size:12.5px;background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:8px 11px}
-.ok-t{color:var(--green);font-weight:600}.no-t{color:var(--amber);font-weight:600}
-textarea{width:100%;height:110px;background:#0b0f14;color:var(--text);border:1px solid var(--border);border-radius:9px;padding:9px;font-family:Consolas,monospace;font-size:11px;resize:vertical}
-.msg{font-size:12px;color:var(--muted);min-height:17px;margin-top:6px}
-</style></head><body><div class="wrap">
-<header><div><h1>🎮 TakeMySkins Automator</h1><div class="sub">Cloudflare Worker · cron la 6h</div></div>
-<div class="pill"><span class="dot" id="dot"></span><span id="rt">Idle</span></div></header>
+  :root {
+    --bg: #0a0e17;
+    --card: #111827;
+    --card2: #151b2b;
+    --border: #1f2a3f;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --blue: #3b82f6;
+    --green: #22c55e;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --cyan: #22d3ee;
+    --purple: #8b5cf6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 15% -10%, #16204a55, transparent 60%),
+                radial-gradient(900px 500px at 100% 0%, #2a1a4d44, transparent 55%),
+                var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+    padding: 0 0 30px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
 
-<div class="grid">
-<div class="card"><h2>🚀 Verificare</h2>
-<button class="btn b-green" id="btncheck">Ruleaza verificarea</button>
-<button class="btn b-blue" id="btnrefresh">⟳ Refresh</button>
-<div class="msg" id="status">Astept comenzi...</div>
-<div class="msg">⏱ Cron automat la fiecare 6 ore</div></div>
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 0; margin-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 12px; display: flex;
+    align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--blue), var(--purple));
+    font-size: 22px; box-shadow: 0 4px 16px #3b82f655;
+  }
+  .brand h1 { font-size: 19px; font-weight: 700; }
+  .brand p { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
 
-<div class="card"><h2>🔑 Sesiune</h2>
-<div class="sessline" id="sess">Verific sesiunea...</div>
-<details style="margin-top:9px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Actualizeaza cookies manual</summary>
-<textarea id="cookiestext" placeholder='{"cookies":[{"name":"takemyskins_session","value":"..."}], "saved_at":...}'></textarea>
-<button class="btn b-blue" id="btnsave" style="margin-top:7px">Salveaza cookies</button>
-</details></div>
+  .pill {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 5px 14px; font-size: 12px; font-weight: 600;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #3f4650; transition: background .3s; }
+  .dot.ok   { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  @keyframes pulse { 50% { opacity: .45; } }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 16px;
+    box-shadow: 0 6px 18px #0003;
+  }
+  .card .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .card .head .t { font-size: 15px; font-weight: 700; }
+  .card .head .s { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+  .ic {
+    width: 30px; height: 30px; border-radius: 8px; display: flex;
+    align-items: center; justify-content: center; font-size: 15px; flex: 0 0 auto;
+  }
+  .card .body { display: flex; flex-direction: column; gap: 10px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: none; border-radius: 10px; padding: 11px 16px;
+    font-size: 13px; font-weight: 600; color: #fff; cursor: pointer;
+    transition: transform .08s, filter .15s;
+    font-family: inherit;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+  .b-blue  { background: var(--blue); }
+  .b-green { background: var(--green); }
+  .b-gray  { background: #1f2937; color: var(--muted); }
+
+  .statusline { font-size: 13px; color: var(--muted); min-height: 20px; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 620px) { .stats { grid-template-columns: 1fr; } }
+  .stat {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px;
+  }
+  .stat .v { font-size: 28px; font-weight: 700; margin-top: 8px; }
+  .stat .l { font-size: 12px; color: var(--muted); font-weight: 500; margin-top: 2px; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tab {
+    background: var(--card2); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: all .15s;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: #22c55e22; border-color: #22c55e55; color: var(--green); }
+  .tabcount {
+    background: var(--card); border-radius: 10px; padding: 1px 8px;
+    font-size: 11px; color: var(--muted);
+  }
+  .tab.active .tabcount { background: #22c55e33; color: var(--green); }
+
+  .prizes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  @media (max-width: 620px) { .prizes { grid-template-columns: repeat(2, 1fr); } }
+  .prize {
+    background: var(--card2); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; transition: transform .12s, border-color .15s;
+  }
+  .prize:hover { transform: translateY(-2px); border-color: var(--blue); }
+  .prize .thumb { background: #0b0f14; display: flex; align-items: center; justify-content: center; height: 90px; }
+  .prize .thumb img { max-height: 70px; max-width: 100%; }
+  .prize .meta { padding: 8px 10px; }
+  .prize .pname { font-size: 11.5px; font-weight: 600; line-height: 1.25; height: 29px; overflow: hidden; }
+  .prize .prow { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; }
+  .prize .pprice { font-size: 13px; font-weight: 700; color: var(--green); }
+  .prize .pdate { font-size: 10px; color: var(--muted); }
+  .prize .pexterior { font-size: 10px; color: var(--blue); }
+  .empty {
+    grid-column: 1 / -1; background: var(--card2); border-radius: 10px;
+    padding: 16px; color: var(--muted); font-size: 12px; font-style: italic; text-align: center;
+  }
+
+  #log {
+    background: #0b0f14; border: 1px solid #1a2a45; border-radius: 10px;
+    padding: 10px; height: 220px; overflow-y: auto;
+    font-family: Consolas, "Cascadia Mono", monospace; font-size: 11.5px;
+    line-height: 1.7;
+  }
+  #log .line { color: var(--blue); white-space: pre-wrap; word-break: break-word; }
+  #log .line.g { color: var(--green); }
+  #log .line.r { color: var(--red); }
+  #log .line.y { color: var(--amber); }
+  #log .line.c { color: var(--cyan); }
+  #log .line.m { color: var(--muted); }
+
+  .sessline {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 12px; font-size: 12.5px;
+  }
+  .sessline .ok { color: var(--green); font-weight: 600; }
+  .sessline .no { color: var(--amber); font-weight: 600; }
+
+  textarea {
+    width: 100%; height: 110px; background: #0b0f14; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 9px;
+    font-family: Consolas, monospace; font-size: 11px; resize: vertical;
+  }
+
+  footer { margin-top: 22px; text-align: center; font-size: 10px; color: #2a3350; display: flex; gap: 8px; justify-content: center; align-items: center; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 9px; border-radius: 12px; font-size: 11px; font-weight: 600;
+    background: #22c55e22; color: var(--green);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo">🎮</div>
+      <div>
+        <h1>TakeMySkins Automator</h1>
+        <p>Raffle bot 24/7 · Cloudflare</p>
+      </div>
+    </div>
+    <div class="pill"><span class="dot" id="dot"></span><span id="rt">Idle</span></div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <div class="head">
+        <div class="ic" style="background:#22c55e22;">🔑</div>
+        <div><div class="t">Sesiune</div><div class="s">Contul conectat la bot</div></div>
+      </div>
+      <div class="body">
+        <div class="sessline" id="sess">Verific sesiunea...</div>
+        <details>
+          <summary style="cursor:pointer;font-size:12px;color:var(--muted)">Actualizeaza cookies manual</summary>
+          <textarea id="cookiestext" placeholder='{"cookies":[{"name":"takemyskins_session","value":"..."}]}'></textarea>
+          <button class="btn b-blue" id="btnsave" style="margin-top:7px">Salveaza cookies</button>
+        </details>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <div class="ic" style="background:#22c55e22;">🚀</div>
+        <div><div class="t">Verificare</div><div class="s">Ruleaza manual sau asteapta cron-ul</div></div>
+      </div>
+      <div class="body">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn b-green" id="btncheck">Ruleaza verificarea</button>
+          <button class="btn b-gray" id="btnrefresh">⟳ Refresh</button>
+        </div>
+        <div class="statusline" id="status">Astept comenzi...</div>
+        <div style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;">⏱ Cron automat la fiecare 6 ore</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="height:14px;"></div>
+
+  <div class="card">
+    <div class="head">
+      <div class="ic" style="background:#8b5cf622;">📊</div>
+      <div><div class="t">Statistici site</div><div class="s">Date live de pe takemyskins.com</div></div>
+    </div>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div style="height:14px;"></div>
+
+  <div class="card">
+    <div class="head">
+      <div class="ic" style="background:#22c55e22;">🏆</div>
+      <div><div class="t">Prizele mele</div><div class="s">Cistiguri de pe profilul meu</div></div>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="active" id="tabbtn_active">Active <span id="tc_a" class="tabcount">0</span></button>
+      <button class="tab" data-tab="history" id="tabbtn_history">Istoric <span id="tc_h" class="tabcount">0</span></button>
+    </div>
+    <div class="prizes" id="prizes_active"></div>
+    <div class="prizes" id="prizes_history" style="display:none;"></div>
+  </div>
+
+  <div style="height:14px;"></div>
+
+  <div class="card">
+    <div class="head">
+      <div class="ic" style="background:#22d3ee22;">⌨️</div>
+      <div><div class="t">Log</div><div class="s">Iesirea in timp real</div></div>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <footer>
+    <span class="chip">API connected</span>
+    <span class="chip">Session KV</span>
+    <span style="margin-left:4px;">v3.0 · Cloudflare Workers</span>
+  </footer>
 </div>
 
-<div class="stats" id="stats"></div>
-<h2 style="font-size:14px;margin:16px 0 8px">🏆 Prizele mele <span style="font-size:11px;color:var(--muted)">(tab Active + Istoric)</span></h2>
-<div class="tabs"><button class="tab active" data-tab="active">Active <span id="tc_a">0</span></button><button class="tab" data-tab="history">Istoric <span id="tc_h">0</span></button></div>
-<div class="prizes" id="prizes_active"></div>
-<div class="prizes" id="prizes_history" style="display:none"></div>
-
-<h2 style="font-size:14px;margin:16px 0 0">⌨️ Log</h2>
-<div id="log"></div>
-</div>
 <script>
-const $=(i)=>document.getElementById(i);
+const $ = (id) => document.getElementById(id);
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-let lastN=0;
-async function pollLogs(){try{const r=await fetch('/api/logs?after='+lastN);const d=await r.json();if(d.lines&&d.lines.length){lastN=d.count;const el=$('log');d.lines.forEach(l=>{const div=document.createElement('div');div.className='line '+(l.color||'b');div.textContent='['+l.time+'] '+l.msg;el.appendChild(div)});el.scrollTop=el.scrollHeight}}catch(e){}}
-async function pollStatus(){try{const r=await fetch('/api/status');const d=await r.json();$('dot').className='dot '+(d.last&&d.last.finishedAt?'ok':'');$('rt').textContent=d.last?('Ultima: '+new Date(d.last.finishedAt).toLocaleString('ro-RO')):'Idle';
-if(d.session)$('sess').innerHTML='<span class="ok-t">● Conectat: '+esc(d.session.nickname||'?')+'</span>';else $('sess').innerHTML='<span class="no-t">● Nu esti logat - adauga cookies mai jos</span>';
-if(d.winnings&&!d.winnings.error){const w=d.winnings;$('stats').innerHTML='<div class="stat"><div class="l">Rafle participat</div><div class="v">'+w.participated+'</div></div><div class="stat"><div class="l">Prize castigate</div><div class="v" style="color:var(--green)">'+w.won_count+'</div></div><div class="stat"><div class="l">Valoare</div><div class="v" style="font-size:21px;padding-top:7px">$'+(+w.won_cost).toFixed(2)+'</div></div>';
-$('tc_a').textContent=w.active_count;$('tc_h').textContent=w.history_count;
-renderP('prizes_active',w.active,'Niciun premiu activ.');renderP('prizes_history',w.history,'Niciun premiu luat pe cont.')}}catch(e){}}
-function renderP(id,items,msg){const el=$(id);if(!items||!items.length){el.innerHTML='<div class="empty">'+esc(msg)+'</div>';return}
-el.innerHTML=items.map(p=>'<div class="prize" onclick="window.open(this.dataset.url)" data-url="'+esc(p.url)+'" title="'+esc(p.name)+'"><div class="thumb">'+(p.image?'<img src="'+esc(p.image)+'" loading="lazy">':'🎁')+'</div><div class="meta"><div class="pname">'+esc(p.name)+'</div><div class="prow"><span class="pprice">$'+(+p.price).toFixed(2)+'</span><span class="pdate">'+esc(String(p.time_finished||'').slice(0,10))+'</span></div>'+(p.exterior?'<div style="font-size:9.5px;color:var(--blue)">'+esc(p.exterior)+'</div>':'')+'</div></div>').join('')}
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');$('prizes_active').style.display=t.dataset.tab==='active'?'grid':'none';$('prizes_history').style.display=t.dataset.tab==='history'?'grid':'none'}));
-$('btncheck').onclick=async()=>{$('status').textContent='Se ruleaza... (poate dura ~1 min)';try{const r=await fetch('/api/check',{method:'POST'});const d=await r.json();$('status').textContent=d.ok?('Gata: '+d.joined+' noi, '+d.already+' deja'):(d.error||'Eroare')}catch(e){$('status').textContent='Eroare retea'}};
-$('btnrefresh').onclick=()=>{pollStatus();pollLogs()};
-$('btnsave').onclick=async()=>{try{const body=$('cookiestext').value.trim();JSON.parse(body);const r=await fetch('/admin/session',{method:'POST',headers:{'content-type':'application/json'},body});const d=await r.json();$('status').textContent=d.ok?'Cookies salvate!':'Eroare: '+d.error}catch(e){$('status').textContent='JSON invalid!'}}; 
-pollStatus();pollLogs();setInterval(pollLogs,3000);setInterval(pollStatus,30000);
-</script></body></html>`);
+let lastN = 0;
+
+async function pollLogs() {
+  try {
+    const r = await fetch("/api/logs?after=" + lastN);
+    const d = await r.json();
+    if (d.lines && d.lines.length) {
+      lastN = d.count;
+      const el = $("log");
+      d.lines.forEach(l => {
+        const div = document.createElement("div");
+        div.className = "line " + (l.color || "b");
+        div.textContent = "[" + l.time + "] " + l.msg;
+        el.appendChild(div);
+      });
+      el.scrollTop = el.scrollHeight;
+    }
+  } catch (e) {}
+}
+
+async function pollStatus() {
+  try {
+    const r = await fetch("/api/status");
+    const d = await r.json();
+    $("dot").className = "dot " + (d.last && d.last.finishedAt ? "ok" : "");
+    $("rt").textContent = d.last ? ("Ultima: " + new Date(d.last.finishedAt).toLocaleString("ro-RO")) : "Idle";
+    if (d.session) $("sess").innerHTML = '<span class="ok">● Conectat: ' + esc(d.session.nickname || "?") + '</span>';
+    else $("sess").innerHTML = '<span class="no">● Nu esti logat — adauga cookies mai jos</span>';
+    if (d.winnings && !d.winnings.error) {
+      const w = d.winnings;
+      $("stats").innerHTML =
+        '<div class="stat"><div class="l">Rafle participat</div><div class="v">' + w.participated + '</div></div>' +
+        '<div class="stat"><div class="l">Prize cistigate</div><div class="v" style="color:var(--green)">' + w.won_count + '</div></div>' +
+        '<div class="stat"><div class="l">Valoare totala</div><div class="v" style="font-size:22px;padding-top:6px;">$' + (+w.won_cost).toFixed(2) + '</div></div>';
+      $("tc_a").textContent = w.active_count;
+      $("tc_h").textContent = w.history_count;
+      renderP("prizes_active", w.active, "Niciun premiu activ. Cele noi apar aici.");
+      renderP("prizes_history", w.history, "Niciun premiu luat inca pe cont.");
+    }
+  } catch (e) {}
+}
+
+function renderP(id, items, msg) {
+  const el = $(id);
+  if (!items || !items.length) { el.innerHTML = '<div class="empty">' + esc(msg) + '</div>'; return; }
+  el.innerHTML = items.map(p =>
+    '<div class="prize" onclick="window.open(this.dataset.url)" data-url="' + esc(p.url || "https://takemyskins.com/") + '" title="' + esc(p.name) + '">' +
+    '<div class="thumb">' + (p.image ? '<img src="' + esc(p.image) + '" loading="lazy">' : '🎁') + '</div>' +
+    '<div class="meta"><div class="pname">' + esc(p.name) + '</div>' +
+    '<div class="prow"><span class="pprice">$' + (+p.price).toFixed(2) + '</span><span class="pdate">' + esc(String(p.time_finished || "").slice(0, 10)) + '</span></div>' +
+    (p.exterior ? '<div class="pexterior">' + esc(p.exterior) + '</div>' : '') +
+    '</div></div>').join("");
+}
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    $("prizes_active").style.display = tab.dataset.tab === "active" ? "grid" : "none";
+    $("prizes_history").style.display = tab.dataset.tab === "history" ? "grid" : "none";
+  });
+});
+
+$("btncheck").addEventListener("click", async () => {
+  $("status").textContent = "Se ruleaza... (poate dura ~1 min)";
+  try {
+    const r = await fetch("/api/check", { method: "POST" });
+    const d = await r.json();
+    $("status").textContent = d.ok ? ("Gata: " + d.joined + " noi, " + d.already + " deja") : (d.error || "Eroare");
+  } catch (e) { $("status").textContent = "Eroare retea"; }
+});
+$("btnrefresh").addEventListener("click", () => { pollStatus(); pollLogs(); });
+$("btnsave").addEventListener("click", async () => {
+  try {
+    JSON.parse($("cookiestext").value.trim());
+    const r = await fetch("/admin/session", { method: "POST", headers: { "content-type": "application/json" }, body: $("cookiestext").value.trim() });
+    const d = await r.json();
+    $("status").textContent = d.ok ? "Cookies salvate!" : "Eroare: " + d.error;
+  } catch (e) { $("status").textContent = "JSON invalid!"; }
+});
+
+pollStatus(); pollLogs();
+setInterval(pollLogs, 3000);
+setInterval(pollStatus, 30000);
+</script>
+</body>
+</html>`);
 }
 
 // ── router ─────────────────────────────────────────────────────────────
@@ -417,7 +674,14 @@ export default {
 
     if (path === "/healthz") return json({ ok: true });
 
-    if (path === "/" || path === "/index.html") return dashboardHTML();
+    // Link stabil catre tunelul G4f de pe PC-ul utilizatorului
+    if (path === "/g4f") {
+      const target = await env.SESSION_KV.get("g4f:url");
+      if (!target) return html("<h1>G4f offline</h1><p>PC-ul nu e pornit sau tunelul nu e activ.</p><a href='/'>&larr; inapoi</a>");
+      return new Response(null, { status: 302, headers: { Location: target } });
+    }
+
+    if (path === "/") return dashboardHTML();
 
     if (path === "/api/logs") {
       const after = parseInt(url.searchParams.get("after") || "0", 10);
