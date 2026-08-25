@@ -694,9 +694,27 @@ export default {
       const last = raw ? JSON.parse(raw) : null;
       const me = await apiFetch(env, "/profile/user", { noCsrf: true }).catch(() => null);
       const user = me && me.data && me.data.user;
+
+      // winnings cu cache de 5 minute (evitam bombardarea API-ului TMS)
+      let winnings = null;
+      try {
+        const cachedW = await env.SESSION_KV.get("tms:winnings_cache");
+        let wobj = cachedW ? JSON.parse(cachedW) : null;
+        if (!wobj || Date.now() - (wobj._ts || 0) > 5 * 60 * 1000) {
+          winnings = await getWinnings(env);
+          await env.SESSION_KV.put(
+            "tms:winnings_cache",
+            JSON.stringify({ ...winnings, _ts: Date.now() })
+          );
+        } else {
+          winnings = wobj;
+        }
+      } catch {}
+
       return json({
         last,
         session: user ? { nickname: user.nickname, id: user.id } : null,
+        winnings,
       });
     }
 
