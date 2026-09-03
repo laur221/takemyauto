@@ -121,43 +121,63 @@ class RaffleBot:
         return self._set_csrf(session, log)
 
     def list_active_giveaways_from_html(self, log=None):
-        """Parsează pagina principală și extrage raflele direct din HTML"""
-        import re
+        """
+        Încearcă să listeze raflele folosind API-ul (mai întâi), 
+        dacă eșuează folosește fallback cu segmente hard-codate cunoscute.
+        """
         session = self._ensure_session(log)
+        
+        # Încercăm API-ul clasic mai întâi
         try:
-            r = session.get("https://takemyskins.com/", timeout=20)
-            r.raise_for_status()
-            html = r.text
-            
-            # Caută toate link-urile către giveaways: /giveaways/{segment}
-            pattern = r'href="(/giveaways/([a-f0-9]+))"[^>]*>(.*?)</a>'
-            matches = re.findall(pattern, html, re.DOTALL)
-            
-            giveaways = []
-            for url, segment, content in matches:
-                # Verifică dacă e deja înscris (conține "You're in")
-                joined = "You're in" in content or "You&#x27;re in" in content
-                
-                # Extrage numele (aproximativ, poate fi îmbunătățit)
-                name_match = re.search(r'Raffle #(\d+)', content)
-                name = f"Raffle #{name_match.group(1)}" if name_match else f"Raffle {segment[:8]}"
-                
-                giveaways.append({
-                    "id": segment,  # Folosim segment ca ID
-                    "custom_url_segment": segment,
-                    "name": name,
-                    "joined": joined,
-                    "is_joined": joined
-                })
-            
-            if log:
-                log(f"[HTML] Găsite {len(giveaways)} rafle pe pagina principală")
-            
-            return {"giveaways": giveaways, "total": {"active_total": len(giveaways)}}
+            r = session.get(
+                f"{API_BASE}/giveaway/active_giveaways",
+                params={"page": 1, "per_page": 50},
+                timeout=20
+            )
+            if r.status_code == 200:
+                try:
+                    data = r.json()
+                    giveaways = data.get("giveaways", [])
+                    if len(giveaways) > 0:
+                        if log:
+                            log(f"[API] Găsite {len(giveaways)} rafle din API")
+                        return data
+                except:
+                    pass
         except Exception as e:
             if log:
-                log(f"[HTML] Eroare la parsarea HTML: {e}")
-            return {"giveaways": [], "total": {"active_total": 0}}
+                log(f"[API] API a eșuat: {e}")
+        
+        # Fallback: încearcă să găsească rafle cunoscute manual
+        # Acestea sunt segmente care au fost văzute recent pe site
+        known_segments = ["a6418622", "0fb358f8", "276aa989"]
+        
+        giveaways = []
+        for segment in known_segments:
+            try:
+                # Verifică dacă rafla există apelând show_giveaway
+                r = session.get(f"{API_BASE}/giveaway/show/{segment}", timeout=10)
+                if r.status_code == 200:
+                    try:
+                        data = r.json()
+                        giveaway_data = data.get("data", {})
+                        if giveaway_data:
+                            giveaways.append({
+                                "id": segment,
+                                "custom_url_segment": segment,
+                                "name": giveaway_data.get("name", f"Raffle {segment[:8]}"),
+                                "joined": giveaway_data.get("is_joined", False),
+                                "is_joined": giveaway_data.get("is_joined", False)
+                            })
+                    except:
+                        pass
+            except:
+                pass
+        
+        if log:
+            log(f"[FALLBACK] Găsite {len(giveaways)} rafle din segmente cunoscute")
+        
+        return {"giveaways": giveaways, "total": {"active_total": len(giveaways)}}
 
     def list_active_giveaways(self, log=None, page=1, per_page=50):
         session = self._ensure_session(log)
