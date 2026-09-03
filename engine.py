@@ -324,7 +324,7 @@ class RaffleBot:
                         log(f"[OK] Deja inscris: {name} (#{gid})")
                         continue
 
-                    log(f"-> Verific {name} (#{gid})...")
+                    log(f"-> Verific {name} (#{segment})...")
                     cond_data = self.get_conditions(segment, log)
                     
                     # Skip rafle care returnează eroare (șterse/închise)
