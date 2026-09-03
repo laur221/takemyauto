@@ -120,6 +120,45 @@ class RaffleBot:
         session = self._ensure_session(log)
         return self._set_csrf(session, log)
 
+    def list_active_giveaways_from_html(self, log=None):
+        """Parsează pagina principală și extrage raflele direct din HTML"""
+        import re
+        session = self._ensure_session(log)
+        try:
+            r = session.get("https://takemyskins.com/", timeout=20)
+            r.raise_for_status()
+            html = r.text
+            
+            # Caută toate link-urile către giveaways: /giveaways/{segment}
+            pattern = r'href="(/giveaways/([a-f0-9]+))"[^>]*>(.*?)</a>'
+            matches = re.findall(pattern, html, re.DOTALL)
+            
+            giveaways = []
+            for url, segment, content in matches:
+                # Verifică dacă e deja înscris (conține "You're in")
+                joined = "You're in" in content or "You&#x27;re in" in content
+                
+                # Extrage numele (aproximativ, poate fi îmbunătățit)
+                name_match = re.search(r'Raffle #(\d+)', content)
+                name = f"Raffle #{name_match.group(1)}" if name_match else f"Raffle {segment[:8]}"
+                
+                giveaways.append({
+                    "id": segment,  # Folosim segment ca ID
+                    "custom_url_segment": segment,
+                    "name": name,
+                    "joined": joined,
+                    "is_joined": joined
+                })
+            
+            if log:
+                log(f"[HTML] Găsite {len(giveaways)} rafle pe pagina principală")
+            
+            return {"giveaways": giveaways, "total": {"active_total": len(giveaways)}}
+        except Exception as e:
+            if log:
+                log(f"[HTML] Eroare la parsarea HTML: {e}")
+            return {"giveaways": [], "total": {"active_total": 0}}
+
     def list_active_giveaways(self, log=None, page=1, per_page=50):
         session = self._ensure_session(log)
         params = {"page": page, "per_page": per_page}
@@ -307,12 +346,12 @@ class RaffleBot:
                 log("[API] Eroare la init /root. Verifica reteaua.")
                 return "Eroare"
 
-            log("[API] Se listeaza raflele active...")
-            data = self.list_active_giveaways(log)
+            log("[HTML] Se listeaza raflele active de pe site...")
+            data = self.list_active_giveaways_from_html(log)
             giveaways = data.get("giveaways") or []
             total_info = data.get("total") or {}
             total = total_info.get("active_total") if isinstance(total_info, dict) else total_info
-            log(f"[API] {len(giveaways)} rafle pe pagina ({total} active).")
+            log(f"[HTML] {len(giveaways)} rafle gasite pe pagina ({total} active).")
 
             joined_count = 0
             skipped_conditions = 0
