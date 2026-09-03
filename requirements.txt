@@ -5,3 +5,4 @@ seleniumbase>=4.20.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 redis>=4.5.0
+playwright>=1.40.0

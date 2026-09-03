@@ -122,62 +122,64 @@ class RaffleBot:
 
     def list_active_giveaways_from_html(self, log=None):
         """
-        Încearcă să listeze raflele folosind API-ul (mai întâi), 
-        dacă eșuează folosește fallback cu segmente hard-codate cunoscute.
+        Folosește Playwright headless browser pentru a scrape rafle și a intra în ele.
+        API-ul TakeMySkins e blocat pentru bots, deci folosim browser real.
         """
-        session = self._ensure_session(log)
-        
-        # Încercăm API-ul clasic mai întâi
         try:
-            r = session.get(
-                f"{API_BASE}/giveaway/active_giveaways",
-                params={"page": 1, "per_page": 50},
-                timeout=20
-            )
-            if r.status_code == 200:
-                try:
-                    data = r.json()
-                    giveaways = data.get("giveaways", [])
-                    if len(giveaways) > 0:
+            from playwright.sync_api import sync_playwright
+            import json
+            
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context()
+                
+                # Încarcă cookies dacă există
+                cookies_file = os.path.join(BASE_DIR, "cookies.json")
+                if os.path.exists(cookies_file):
+                    try:
+                        with open(cookies_file, 'r') as f:
+                            cookies = json.load(f)
+                            context.add_cookies(cookies)
+                            if log:
+                                log(f"[PW] Cookies incarcate ({len(cookies)} cookies)")
+                    except Exception as e:
                         if log:
-                            log(f"[API] Găsite {len(giveaways)} rafle din API")
-                        return data
-                except:
-                    pass
+                            log(f"[PW] Eroare incarcare cookies: {e}")
+                
+                page = context.new_page()
+                page.goto("https://takemyskins.com/", wait_until="networkidle", timeout=30000)
+                
+                # Extrage raflele
+                giveaways = page.evaluate("""() => {
+                    const links = Array.from(document.querySelectorAll('a[href*="/giveaway"]'));
+                    return links.map(l => ({
+                        url: l.href,
+                        segment: l.href.split('/').pop(),
+                        isJoined: l.textContent.includes("You're in")
+                    }));
+                }""")
+                
+                if log:
+                    log(f"[PW] Gasite {len(giveaways)} rafle pe site")
+                
+                # Convertește în format compatibil
+                result_giveaways = []
+                for g in giveaways:
+                    result_giveaways.append({
+                        "id": g['segment'],
+                        "custom_url_segment": g['segment'],
+                        "name": f"Raffle {g['segment'][:8]}",
+                        "joined": g['isJoined'],
+                        "is_joined": g['isJoined']
+                    })
+                
+                browser.close()
+                return {"giveaways": result_giveaways, "total": {"active_total": len(result_giveaways)}}
+                
         except Exception as e:
             if log:
-                log(f"[API] API a eșuat: {e}")
-        
-        # Fallback: încearcă să găsească rafle cunoscute manual
-        # Acestea sunt segmente care au fost văzute recent pe site
-        known_segments = ["a6418622", "0fb358f8", "276aa989"]
-        
-        giveaways = []
-        for segment in known_segments:
-            try:
-                # Verifică dacă rafla există apelând show_giveaway
-                r = session.get(f"{API_BASE}/giveaway/show/{segment}", timeout=10)
-                if r.status_code == 200:
-                    try:
-                        data = r.json()
-                        giveaway_data = data.get("data", {})
-                        if giveaway_data:
-                            giveaways.append({
-                                "id": segment,
-                                "custom_url_segment": segment,
-                                "name": giveaway_data.get("name", f"Raffle {segment[:8]}"),
-                                "joined": giveaway_data.get("is_joined", False),
-                                "is_joined": giveaway_data.get("is_joined", False)
-                            })
-                    except:
-                        pass
-            except:
-                pass
-        
-        if log:
-            log(f"[FALLBACK] Găsite {len(giveaways)} rafle din segmente cunoscute")
-        
-        return {"giveaways": giveaways, "total": {"active_total": len(giveaways)}}
+                log(f"[PW] Eroare Playwright: {e}")
+            return {"giveaways": [], "total": {"active_total": 0}}
 
     def list_active_giveaways(self, log=None, page=1, per_page=50):
         session = self._ensure_session(log)
@@ -197,20 +199,84 @@ class RaffleBot:
         return r.json()
 
     def join_giveaway(self, ref, log=None):
-        session = self._ensure_session(log)
-        r = session.post(
-            f"{API_BASE}/giveaway/join_giveaway/{ref}",
-            json={},
-            timeout=20,
-        )
+        """
+        Intră în raflă folosind Playwright (API-ul e blocat).
+        Completează automat condițiile și apasă Join.
+        """
         try:
-            return r.json()
+            from playwright.sync_api import sync_playwright
+            import json
+            
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context()
+                
+                # Încarcă cookies
+                cookies_file = os.path.join(BASE_DIR, "cookies.json")
+                if os.path.exists(cookies_file):
+                    with open(cookies_file, 'r') as f:
+                        cookies = json.load(f)
+                        context.add_cookies(cookies)
+                
+                page = context.new_page()
+                page.goto(f"https://takemyskins.com/giveaways/{ref}", wait_until="networkidle", timeout=30000)
+                
+                # Verifică dacă deja înscris
+                is_joined = page.evaluate("""() => {
+                    return document.body.innerText.includes("You're in");
+                }""")
+                
+                if is_joined:
+                    browser.close()
+                    return {"status": "success", "message": "Already joined"}
+                
+                # Completează condițiile (click pe check pentru fiecare task)
+                try:
+                    check_buttons = page.locator('button:has-text("Check"), button:has-text("Verify")').all()
+                    for btn in check_buttons:
+                        try:
+                            if btn.is_visible(timeout=1000):
+                                btn.click()
+                                page.wait_for_timeout(500)
+                        except:
+                            pass
+                    page.wait_for_timeout(2000)
+                except:
+                    pass
+                
+                # Click pe butonul de join
+                try:
+                    join_btn = page.locator('button:has-text("Join"), button:has-text("Enter"), button:has-text("Participate")').first
+                    if join_btn.is_visible(timeout=5000):
+                        join_btn.click()
+                        page.wait_for_timeout(2000)
+                        browser.close()
+                        return {"status": "success"}
+                    else:
+                        browser.close()
+                        return {"status": "error", "error_message": "Join button not found"}
+                except Exception as e:
+                    browser.close()
+                    return {"status": "error", "error_message": str(e)}
+                    
         except Exception as e:
+            # Fallback la API vechi dacă Playwright eșuează
+            if log:
+                log(f"[PW] Eroare Playwright join, fallback la API: {e}")
+            session = self._ensure_session(log)
+            r = session.post(
+                f"{API_BASE}/giveaway/join_giveaway/{ref}",
+                json={},
+                timeout=20,
+            )
             try:
-                error_text = r.text[:200]
-            except Exception:
-                error_text = f"Failed to parse response (status {r.status_code})"
-            return {"status": "error", "error_message": error_text}
+                return r.json()
+            except Exception as e:
+                try:
+                    error_text = r.text[:200]
+                except Exception:
+                    error_text = f"Failed to parse response (status {r.status_code})"
+                return {"status": "error", "error_message": error_text}
 
     def check_reward_conditions(self, condition, ga_id, log=None):
         session = self._ensure_session(log)
