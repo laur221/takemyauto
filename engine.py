@@ -134,7 +134,7 @@ class RaffleBot:
                 context = browser.new_context()
                 
                 # Încarcă cookies dacă există
-                cookies_file = os.path.join(BASE_DIR, "cookies.json")
+                cookies_file = os.path.join(BASE_DIR, "user_session", "tms_cookies.json")
                 if os.path.exists(cookies_file):
                     try:
                         with open(cookies_file, 'r') as f:
@@ -212,7 +212,7 @@ class RaffleBot:
                 context = browser.new_context()
                 
                 # Încarcă cookies
-                cookies_file = os.path.join(BASE_DIR, "cookies.json")
+                cookies_file = os.path.join(BASE_DIR, "user_session", "tms_cookies.json")
                 if os.path.exists(cookies_file):
                     with open(cookies_file, 'r') as f:
                         cookies = json.load(f)
