@@ -173,6 +173,12 @@ class RaffleBot:
             timeout=20,
         )
         try:
+            # Verifică dacă răspunsul e HTML (sesiune expirată)
+            content_type = r.headers.get('content-type', '')
+            if 'text/html' in content_type or r.text.strip().startswith('<!DOCTYPE'):
+                if log:
+                    log("[AUTH] Sesiune expirata - cookies invalide. Re-logheaza-te din UI.")
+                return {"status": "error", "error_message": "session_expired"}
             return r.json()
         except Exception:
             return {"status": "error", "error_message": r.text[:200]}
