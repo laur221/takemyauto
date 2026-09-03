@@ -133,32 +133,12 @@ class RaffleBot:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
                 
-                # Încarcă cookies dacă există
-                cookies_file = os.path.join(BASE_DIR, "user_session", "tms_cookies.json")
-                if log:
-                    log(f"[PW] Checking cookies at: {cookies_file} (exists: {os.path.exists(cookies_file)})")
-                if os.path.exists(cookies_file):
-                    try:
-                        with open(cookies_file, 'r') as f:
-                            data = json.load(f)
-                            if log:
-                                log(f"[PW] Loaded JSON: keys={list(data.keys()) if isinstance(data, dict) else 'list'}")
-                            # Extrage cookies din payload salvat de Selenium
-                            if isinstance(data, dict) and "cookies" in data:
-                                cookies = data["cookies"]
-                            else:
-                                cookies = data if isinstance(data, list) else []
-                            
-                            if cookies:
-                                context.add_cookies(cookies)
-                                if log:
-                                    log(f"[PW] Cookies incarcate ({len(cookies)} cookies)")
-                            else:
-                                if log:
-                                    log(f"[PW] Fisier cookies gol sau invalid")
-                    except Exception as e:
-                        if log:
-                            log(f"[PW] Eroare incarcare cookies: {e}")
+                # Încarcă cookies din Redis (Upstash)
+                cookies = self.load_cookies(log)
+                if cookies:
+                    context.add_cookies(cookies)
+                    if log:
+                        log(f"[PW] Cookies incarcate din Redis ({len(cookies)} cookies)")
                 
                 page = context.new_page()
                 page.goto("https://takemyskins.com/", wait_until="networkidle", timeout=30000)
