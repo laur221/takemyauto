@@ -49,6 +49,9 @@ ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright browsers
+RUN playwright install --with-deps chromium
+
 # Copy application code
 COPY app.py engine.py webui.py db_manager.py .
 
