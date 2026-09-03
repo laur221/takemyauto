@@ -149,6 +149,9 @@ class RaffleBot:
                 page = context.new_page()
                 page.goto("https://takemyskins.com/", wait_until="networkidle", timeout=30000)
                 
+                # Așteaptă ca raflele să se încarce (Vue.js e lent)
+                page.wait_for_timeout(5000)
+                
                 # Extrage raflele
                 giveaways = page.evaluate("""() => {
                     const links = Array.from(document.querySelectorAll('a[href*="/giveaway"]'));
