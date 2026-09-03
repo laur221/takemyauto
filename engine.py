@@ -208,15 +208,18 @@ class RaffleBot:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
                 
-                # Încarcă cookies
-                cookies_file = os.path.join(BASE_DIR, "user_session", "tms_cookies.json")
-                if os.path.exists(cookies_file):
-                    with open(cookies_file, 'r') as f:
-                        cookies = json.load(f)
-                        context.add_cookies(cookies)
+                # Încarcă cookies din Redis (Upstash)
+                cookies = self.load_cookies(log)
+                if cookies:
+                    context.add_cookies(cookies)
+                    if log:
+                        log(f"[PW] Cookies incarcate din Redis pentru join ({len(cookies)} cookies)")
                 
                 page = context.new_page()
                 page.goto(f"https://takemyskins.com/giveaways/{ref}", wait_until="networkidle", timeout=30000)
+                
+                # Așteptă ca Vue.js să se încarce
+                page.wait_for_timeout(5000)
                 
                 # Verifică dacă deja înscris
                 is_joined = page.evaluate("""() => {
