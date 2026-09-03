@@ -146,8 +146,12 @@ class RaffleBot:
         )
         try:
             return r.json()
-        except Exception:
-            return {"status": "error", "error_message": r.text[:200]}
+        except Exception as e:
+            try:
+                error_text = r.text[:200]
+            except Exception:
+                error_text = f"Failed to parse response (status {r.status_code})"
+            return {"status": "error", "error_message": error_text}
 
     def check_reward_conditions(self, condition, ga_id, log=None):
         session = self._ensure_session(log)
@@ -322,6 +326,13 @@ class RaffleBot:
 
                     log(f"-> Verific {name} (#{gid})...")
                     cond_data = self.get_conditions(segment, log)
+                    
+                    # Skip rafle care returnează eroare (șterse/închise)
+                    if cond_data.get("status") == "error":
+                        error_msg = cond_data.get("error_message", "unknown")
+                        log(f"[SKIP] {name}: {error_msg}")
+                        continue
+                    
                     cond_inner = cond_data.get("data") or cond_data
 
                     if cond_inner.get("is_joined"):
