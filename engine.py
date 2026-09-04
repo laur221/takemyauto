@@ -307,11 +307,23 @@ class RaffleBot:
                 if log:
                     log(f"[DEBUG] Navigating to {segment}")
                 page.goto(f"https://takemyskins.com/giveaways/{segment}", wait_until="networkidle", timeout=30000)
-                page.wait_for_timeout(5000)
                 
-                # Wait for Vue.js to render the conditions
+                # Wait for conditions to appear in the DOM
                 if log:
-                    log(f"[DEBUG] Waiting for conditions to load...")
+                    log(f"[DEBUG] Waiting for conditions to render...")
+                
+                try:
+                    page.wait_for_function("""() => {
+                        return document.body.innerText.includes('preconditions') || 
+                               document.body.innerText.includes('Share the raffle') ||
+                               document.body.innerText.includes('DONE');
+                    }""", timeout=15000)
+                    if log:
+                        log(f"[DEBUG] Conditions detected on page")
+                except Exception as e:
+                    if log:
+                        log(f"[DEBUG] Timeout waiting for conditions: {str(e)[:50]}")
+                
                 page.wait_for_timeout(5000)
                 
                 if log:
