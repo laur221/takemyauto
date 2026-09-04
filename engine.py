@@ -312,6 +312,14 @@ class RaffleBot:
                     log(f"[DEBUG] Navigating to {segment}")
                 
                 page.goto(f"https://takemyskins.com/giveaways/{segment}", wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(3000)
+                
+                curr_url = page.url
+                curr_title = page.title()
+                body_sample = page.evaluate("""() => (document.body ? document.body.innerText : '').slice(0, 300)""")
+                
+                if log:
+                    log(f"[DEBUG] Page state -> URL: {curr_url} | Title: {curr_title} | Text: {body_sample[:100]}")
                 
                 # Wait for Vue.js app to mount preconditions section
                 if log:
@@ -319,14 +327,15 @@ class RaffleBot:
                 
                 try:
                     page.wait_for_function(
-                        "() => document.body.innerText.includes('Share the raffle') || document.body.innerText.includes('Link your Discord') || document.body.innerText.includes(\"You're in\")",
+                        "() => document.body && (document.body.innerText.includes('Share the raffle') || document.body.innerText.includes('Link your Discord') || document.body.innerText.includes(\"You're in\") || document.body.innerText.includes('preconditions'))",
                         timeout=15000
                     )
                     if log:
                         log(f"[DEBUG] Preconditions section loaded successfully")
                 except Exception as e:
+                    body_fail = page.evaluate("""() => (document.body ? document.body.innerText : '').replace(/\\n+/g, ' ').slice(0, 300)""")
                     if log:
-                        log(f"[DEBUG] Timeout waiting for preconditions: {str(e)[:60]}")
+                        log(f"[DEBUG] Timeout waiting for preconditions. Current text: {body_fail}")
                 
                 page.wait_for_timeout(2000)
                 
