@@ -307,7 +307,12 @@ class RaffleBot:
                 if log:
                     log(f"[DEBUG] Navigating to {segment}")
                 page.goto(f"https://takemyskins.com/giveaways/{segment}", wait_until="networkidle", timeout=30000)
-                page.wait_for_timeout(3000)
+                page.wait_for_timeout(5000)
+                
+                # Wait for Vue.js to render the conditions
+                if log:
+                    log(f"[DEBUG] Waiting for conditions to load...")
+                page.wait_for_timeout(5000)
                 
                 if log:
                     log(f"[DEBUG] Page loaded, checking if already joined")
@@ -385,11 +390,11 @@ class RaffleBot:
                                     if log:
                                         log(f"[DEBUG] Popup closed after {action_text}")
                                 
-                                page.wait_for_timeout(2000)
-                                clicked = True
-                                if log:
-                                    log(f"[DEBUG] {action_text} clicked successfully")
-                                break
+                            page.wait_for_timeout(3000)
+                            
+                            if log:
+                                log(f"[DEBUG] {action_text} clicked successfully")
+                            break
                         except Exception as e:
                             if log:
                                 log(f"[DEBUG] No {action_text} button found: {str(e)[:50]}")
@@ -399,7 +404,15 @@ class RaffleBot:
                             log(f"[DEBUG] No action button found to click")
                         break
                     
-                    page.wait_for_timeout(1000)
+                    # Wait for the condition to update (DONE)
+                    page.wait_for_timeout(3000)
+                    
+                    # Verify the condition is now done
+                    still_pending = page.evaluate("""() => {
+                        return !document.body.innerText.includes("DONE");
+                    }""")
+                    if log:
+                        log(f"[DEBUG] Still pending after click: {still_pending}")
                 
                 # After all conditions - wait and check if automatically joined
                 if log:
