@@ -110,8 +110,8 @@ class RaffleBot:
             return {}
 
     def _ensure_session(self, log=None):
-        if self._http is None:
-            self._http = self._build_http(log)
+        # Always rebuild session to load fresh cookies from Redis
+        self._http = self._build_http(log)
         return self._http
 
     # ── API methods ──────────────────────────────────────────────────────
