@@ -280,12 +280,15 @@ class RaffleBot:
 
     def check_and_join_giveaway_pw(self, segment, log=None):
         """
-        Join raffle - simple flow:
+        Join raffle - simple flow with DETAILED DEBUG LOGGING:
         1. For each condition: Click Share/Link → Close popup tab → Click Check
         2. After all 4 conditions → Automatically joined
         """
         try:
             from playwright.sync_api import sync_playwright
+            
+            if log:
+                log(f"[DEBUG] Starting join flow for {segment}")
             
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
@@ -294,10 +297,18 @@ class RaffleBot:
                 cookies = self.load_cookies(log)
                 if cookies:
                     context.add_cookies(cookies)
+                    if log:
+                        log(f"[DEBUG] Loaded {len(cookies)} cookies into Playwright context")
                 
                 page = context.new_page()
+                if log:
+                    log(f"[DEBUG] Navigating to raffle page: {segment}")
+                
                 page.goto(f"https://takemyskins.com/giveaways/{segment}", wait_until="networkidle", timeout=30000)
                 page.wait_for_timeout(3000)
+                
+                if log:
+                    log(f"[DEBUG] Page loaded, checking if already joined...")
                 
                 # Check if already joined
                 is_joined = page.evaluate("""() => {
@@ -306,76 +317,126 @@ class RaffleBot:
                 
                 if is_joined:
                     if log:
+                        log(f"[DEBUG] Already joined detected - 'You're in!' found on page")
                         log(f"[PW] Already joined: {segment}")
                     browser.close()
                     return {"status": "success", "already_joined": True}
+                
+                if log:
+                    log(f"[DEBUG] Not joined yet, proceeding with conditions...")
                 
                 # Process 4 conditions: Facebook Share, Twitter Share, Reddit Share, Discord Link
                 conditions = ["Facebook", "Twitter", "Reddit", "Discord"]
                 
                 for i, cond_name in enumerate(conditions):
                     if log:
+                        log(f"[DEBUG] ===== CONDITION {i+1}/4: {cond_name} =====")
                         log(f"[PW] [{i+1}/4] Processing {cond_name}...")
                     
                     # Find and click Share/Link button
                     try:
+                        if log:
+                            log(f"[DEBUG] Looking for Share/Link button (nth={i})...")
+                        
                         share_btn = page.locator("text=/Share|Link/i").nth(i)
                         
                         if share_btn.is_visible(timeout=3000):
                             if log:
+                                log(f"[DEBUG] Share/Link button found and visible for {cond_name}")
                                 log(f"[PW] Clicking Share/Link for {cond_name}...")
                             
                             # Click button - opens popup tab
+                            if log:
+                                log(f"[DEBUG] Waiting for popup page to open...")
+                            
                             with context.expect_page() as new_page_info:
                                 share_btn.click()
                             
                             # Get the new popup tab and close it
                             popup_page = new_page_info.value
+                            popup_url = popup_page.url
+                            
+                            if log:
+                                log(f"[DEBUG] Popup opened: {popup_url[:80]}...")
+                            
                             page.wait_for_timeout(1000)
                             popup_page.close()
                             
                             if log:
+                                log(f"[DEBUG] Popup closed for {cond_name}")
                                 log(f"[PW] Closed {cond_name} popup tab")
                             
                             page.wait_for_timeout(500)
+                        else:
+                            if log:
+                                log(f"[DEBUG] Share/Link button NOT visible for {cond_name}")
                     except Exception as e:
                         if log:
+                            log(f"[DEBUG] ERROR clicking Share/Link for {cond_name}: {str(e)[:100]}")
                             log(f"[PW] Error with {cond_name} Share: {e}")
                     
                     # Click Check button
                     try:
+                        if log:
+                            log(f"[DEBUG] Looking for Check button (nth={i})...")
+                        
                         check_btn = page.locator("text=Check").nth(i)
                         page.wait_for_timeout(500)
                         
                         if check_btn.is_visible(timeout=3000):
                             if log:
+                                log(f"[DEBUG] Check button found and visible for {cond_name}")
                                 log(f"[PW] Clicking Check for {cond_name}...")
+                            
                             check_btn.click()
+                            
+                            if log:
+                                log(f"[DEBUG] Check button clicked for {cond_name}")
+                            
                             page.wait_for_timeout(1500)
+                            
+                            if log:
+                                log(f"[DEBUG] Waited after Check click, condition {cond_name} complete")
+                        else:
+                            if log:
+                                log(f"[DEBUG] Check button NOT visible for {cond_name}")
                     except Exception as e:
                         if log:
+                            log(f"[DEBUG] ERROR clicking Check for {cond_name}: {str(e)[:100]}")
                             log(f"[PW] Error clicking Check for {cond_name}: {e}")
                 
                 # After all conditions - check if automatically joined
+                if log:
+                    log(f"[DEBUG] All 4 conditions processed, waiting 2s before final check...")
+                
                 page.wait_for_timeout(2000)
+                
+                if log:
+                    log(f"[DEBUG] Checking if 'You're in!' appears on page...")
                 
                 is_joined_final = page.evaluate("""() => {
                     return document.body.innerText.includes("You're in");
                 }""")
                 
+                if log:
+                    log(f"[DEBUG] Final check result: {'You\\'re in! FOUND' if is_joined_final else 'You\\'re in! NOT FOUND'}")
+                
                 browser.close()
                 
                 if is_joined_final:
                     if log:
+                        log(f"[DEBUG] SUCCESS - User joined raffle {segment}")
                         log(f"[OK] JOINED: {segment}")
                     return {"status": "success", "joined": True}
                 else:
                     if log:
+                        log(f"[DEBUG] WARNING - Conditions completed but 'You\\'re in!' not found")
                         log(f"[WARN] Conditions completed but not joined: {segment}")
                     return {"status": "success", "joined": False}
                     
         except Exception as e:
             if log:
+                log(f"[DEBUG] EXCEPTION in check_and_join_giveaway_pw: {str(e)[:200]}")
                 log(f"[PW] Error: {segment}: {e}")
             return {"status": "error", "message": str(e)}
 
