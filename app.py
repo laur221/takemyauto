@@ -15,6 +15,17 @@ from webui import INDEX_HTML
 db = DBManager()
 bot = RaffleBot(db)
 
+# Pre-populate cookies in Redis at startup
+_startup_cookies = [
+    {"name": "i18n_locale", "value": "en", "domain": ".takemyskins.com", "path": "/", "expires": 1708359327, "httpOnly": False, "secure": True, "sameSite": "Lax"},
+    {"name": "remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d", "value": "eyJpdiI6Ijk0dXNRdFNINDBmQzFjK2xTY3c3R3c9PSIsInZhbHVlIjoiYVlWK3dNbFFqeGVsRlA5dlRIU0lHVGhBZ3ZXckcwakRBWjNtMjlKbUJGTmZLeDR1NlE4ODJXOEtPRDdkdC9hR0M1OVR2ZklpSnRRUWkvS2lneHhkT2Z4bU1KbHA2QWlOYXA4c3ExSUs5UWs1TDVMdlFrbXFUNWtBanFBK2lEMXNDMW1BMmdaWU5OVWd1ODNwMFcxR0pwN2lzUUxXVzBONm1jSlU0TjB6SlBlVHJYcENOM284eW4xcEQ1eFBTRXJIblo1VVF0dnc1VHNVTGlLcEZURHN4dksxSCs4N0dna1BNNDA0UzUrSWtyYz0iLCJtYWMiOiJlNjBkODg4NzY2YmMwMzdmZmI1NWQyYzk2YmIyYmNiYWNjZDkzMTFjNmU3OWQxYjA3OGQwZWU1NDdkZWM0NjA3IiwidGFnIjoiIn0%3D", "domain": ".takemyskins.com", "path": "/", "expires": 1708359336, "httpOnly": True, "secure": True, "sameSite": "Lax"},
+    {"name": "return_url", "value": "eyJpdiI6InczTlB4MkJWdVBmL1NhUWV0M3dERGc9PSIsInZhbHVlIjoieUlPV1dKanQrN3pGVUFsOU1ZeFVESGtjM3lRb211RWZMa3Z5eWtDdnRNNmJ4dWhYWEROcjdkN3pNMkxVbVRLNTRwckRkYjFYeEVVQjAvclc0Wk1ocVd3aFRCV3duZjNkVjJRdFFpeDlqd0k9IiwibWFjIjoiM2ZhNDNmMTI4OGJkYjlkNDdmNTZiNTU5Y2M0ZDgzM2VkODQ0NzhkNjY4ZjZmNzVlNjQ1YTRjNGUzNjNlZmRjNiIsInRhZyI6IiJ9", "domain": ".takemyskins.com", "path": "/", "expires": 1709415310, "httpOnly": True, "secure": True, "sameSite": "Lax"},
+    {"name": "spin_wheel_stat_cookie", "value": "eyJpdiI6IndPcUFnZ3FUYlVYRG5TTnEvWXArcWc9PSIsInZhbHVlIjoiOVEva1dsM1VrRXh3MVgrNFBacUhXQ2ZvNUc0blpTaFFtZmp1YjQrT2FDL1ZmZi85NzF4MGJtdGxldlZNV1N4eUVsY0FVb3ZQRVN5KzdnalB1VG9NQzJBK0o4SVhOQllMZ05Td3JONVVpZGNTZEhLTkVKanQwVEw0bUpxSlpXV3oiLCJtYWMiOiI0MTliMGZlNDAwYmQzYzFmOTdhN2UyMWIwNDU0N2JjMDJiYmI1NGIyMzRiZjRjNWUwNjRlZGUyMDAwY2IwMWViIiwidGFnIjoiIn0%3D", "domain": ".takemyskins.com", "path": "/", "expires": 1708359327, "httpOnly": True, "secure": True, "sameSite": "Lax"},
+    {"name": "takemyskins_session", "value": "x10frgtzbrdOF5jaqBlbO4O7EqLwh8d8kuZrEWj7", "domain": ".takemyskins.com", "path": "/", "expires": 1726012641, "httpOnly": True, "secure": True, "sameSite": "Lax"},
+    {"name": "XSRF-TOKEN", "value": "eyJpdiI6IkpBa2NXT0FNSWZMLzI2NUhEY0svU2c9PSIsInZhbHVlIjoiRUx2RC9MK2VhWGZvQXVnQkVJUzZuU2ovVWVjaEE0WklqRmdqT3lEQ1hlWW51TlZOam14SEgwVEl2Ulc3L0dlcnZQaEF4UDNSY2htcktqY0EzbEI2aDVsVXNPWkFDenpNV29Yenp2aGpnU1dSaHMwN2I0MVBmUFI4UEpxK1Q3TEwiLCJtYWMiOiJhZjY4MWJjMjRjZmI4NGI4MDk1NDljNGYwNzMwYTZiOTM3ZTQyODEwY2JlZWFiNGRiMThkY2YzOWNkNDU0NjFjIiwidGFnIjoiIn0%3D", "domain": ".takemyskins.com", "path": "/", "expires": 1726012641, "httpOnly": False, "secure": True, "sameSite": "Lax"}
+]
+db.save_session({"cookies": _startup_cookies, "saved_at": time.time()})
+
 app = FastAPI(title="TakeMySkins Automator", version="2.0.0", docs_url="/docs", redoc_url=None)
 
 # ── shared runtime state ────────────────────────────────────────────────
