@@ -280,9 +280,12 @@ class RaffleBot:
 
     def check_and_join_giveaway_pw(self, segment, log=None):
         """
-        Join raffle - simple flow:
-        1. For each condition: Click Share/Link → Close popup tab → Click Check
-        2. After all 4 conditions → Automatically joined
+        Join raffle - correct flow based on actual page structure:
+        1. Navigate to raffle page
+        2. Find condition items with class "_base_vdxqb_1" (not completed)
+        3. For each non-completed condition, click the action button ("Share"/"Link")
+        4. Wait for condition to show as DONE
+        5. After all conditions done, automatically joined
         """
         try:
             from playwright.sync_api import sync_playwright
@@ -322,92 +325,94 @@ class RaffleBot:
                     return {"status": "success", "already_joined": True}
                 
                 if log:
-                    log(f"[DEBUG] Not joined, processing 4 conditions")
+                    log(f"[DEBUG] Not joined, processing conditions")
                 
-                # Process 4 conditions: Facebook Share, Twitter Share, Reddit Share, Discord Link
-                conditions = ["Facebook", "Twitter", "Reddit", "Discord"]
+                # Process conditions by finding non-completed items
+                # Each condition is a DIV with class "_base_vdxqb_1" (not completed)
+                # Completed ones have "_completed_vdxqb_20"
+                # The action button is inside a DIV with class "_action_vdxqb_16"
                 
-                for i, cond_name in enumerate(conditions):
+                for attempt in range(3):  # Max 3 attempts to complete all conditions
+                    # Get condition status via JavaScript
+                    status = page.evaluate("""() => {
+                        const items = document.querySelectorAll('._base_vdxqb_1');
+                        const result = [];
+                        items.forEach((item, idx) => {
+                            const isCompleted = item.classList.contains('_completed_vdxqb_20');
+                            const actionBtn = item.querySelector('._action_vdxqb_16');
+                            const titleEl = item.querySelector('._title_vdxqb_20');
+                            const title = titleEl?.textContent?.trim() || '';
+                            const actionText = actionBtn?.textContent?.trim() || '';
+                            result.push({
+                                idx,
+                                isCompleted,
+                                title,
+                                actionText,
+                                hasAction: !!actionBtn
+                            });
+                        });
+                        return result;
+                    }""")
+                    
                     if log:
-                        log(f"[DEBUG] ===== CONDITION {i+1}/4: {cond_name} =====")
-                        log(f"[PW] [{i+1}/4] Processing {cond_name}...")
+                        log(f"[DEBUG] Condition status: {len(status)} items found")
                     
-                    # Find and click Share/Link button
-                    try:
+                    # Find non-completed conditions
+                    non_completed = [s for s in status if not s['isCompleted'] and s['hasAction']]
+                    
+                    if not non_completed:
                         if log:
-                            log(f"[DEBUG] Looking for Share/Link button (nth={i})")
+                            log(f"[DEBUG] All conditions completed or no actions needed")
+                        break
+                    
+                    # Process first non-completed condition
+                    cond = non_completed[0]
+                    cond_idx = cond['idx']
+                    cond_title = cond['title']
+                    cond_action = cond['actionText']
+                    
+                    if log:
+                        log(f"[DEBUG] Processing condition {cond_idx}: {cond_title} (action: {cond_action})")
+                        log(f"[PW] [{cond_idx+1}] Processing {cond_title[:30]}...")
+                    
+                    # Click the action button
+                    try:
+                        action_btn = page.locator(f'._base_vdxqb_1:not([class*="_completed_vdxqb_20"]) ._action_vdxqb_16').first
                         
-                        share_btn = page.locator("text=/Share|Link/i").nth(i)
-                        
-                        if share_btn.is_visible(timeout=3000):
+                        if action_btn.is_visible(timeout=3000):
                             if log:
-                                log(f"[DEBUG] Share/Link button found, clicking")
-                                log(f"[PW] Clicking Share/Link for {cond_name}...")
+                                log(f"[DEBUG] Action button found, clicking")
+                                log(f"[PW] Clicking {cond_action} for {cond_title[:30]}")
                             
-                            # Click button - opens popup tab
-                            if log:
-                                log(f"[DEBUG] Waiting for popup to open")
-                            
+                            # Check if it opens a popup or just completes inline
                             with context.expect_page() as new_page_info:
-                                share_btn.click()
+                                action_btn.click()
                             
-                            # Get the new popup tab and close it
+                            # Close popup if it opened
                             popup_page = new_page_info.value
-                            popup_url = popup_page.url
+                            if popup_page:
+                                page.wait_for_timeout(1000)
+                                popup_page.close()
+                                if log:
+                                    log(f"[DEBUG] Popup closed")
+                            
+                            page.wait_for_timeout(2000)
                             
                             if log:
-                                log(f"[DEBUG] Popup opened: {popup_url[:60]}...")
-                                log(f"[DEBUG] Closing popup tab")
-                            
-                            page.wait_for_timeout(1000)
-                            popup_page.close()
-                            
-                            if log:
-                                log(f"[DEBUG] Popup closed for {cond_name}")
-                                log(f"[PW] Closed {cond_name} popup tab")
-                            
-                            page.wait_for_timeout(500)
+                                log(f"[DEBUG] Action {cond_action} completed, waiting for status update")
                         else:
                             if log:
-                                log(f"[DEBUG] Share/Link button NOT visible for {cond_name}")
+                                log(f"[DEBUG] Action button NOT visible for condition {cond_idx}")
                     except Exception as e:
                         if log:
-                            log(f"[DEBUG] ERROR Share/Link for {cond_name}: {str(e)[:80]}")
-                            log(f"[PW] Error with {cond_name} Share: {e}")
+                            log(f"[DEBUG] ERROR action for condition {cond_idx}: {str(e)[:80]}")
+                            log(f"[PW] Error: {e}")
                     
-                    # Click Check button
-                    try:
-                        if log:
-                            log(f"[DEBUG] Looking for Check button (nth={i})")
-                        
-                        check_btn = page.locator("text=Check").nth(i)
-                        page.wait_for_timeout(500)
-                        
-                        if check_btn.is_visible(timeout=3000):
-                            if log:
-                                log(f"[DEBUG] Check button found, clicking")
-                                log(f"[PW] Clicking Check for {cond_name}...")
-                            
-                            check_btn.click()
-                            
-                            if log:
-                                log(f"[DEBUG] Check button clicked for {cond_name}")
-                            
-                            page.wait_for_timeout(1500)
-                            
-                            if log:
-                                log(f"[DEBUG] Condition {cond_name} complete, waiting")
-                        else:
-                            if log:
-                                log(f"[DEBUG] Check button NOT visible for {cond_name}")
-                    except Exception as e:
-                        if log:
-                            log(f"[DEBUG] ERROR Check for {cond_name}: {str(e)[:80]}")
-                            log(f"[PW] Error clicking Check for {cond_name}: {e}")
+                    page.wait_for_timeout(1000)
                 
-                # After all conditions - check if automatically joined
+                # After all conditions - wait and check if automatically joined
                 if log:
-                    log(f"[DEBUG] All 4 conditions done, waiting 2s before final check")
+                    log(f"[DEBUG] All conditions processed, waiting 2s before final check")
                 
                 page.wait_for_timeout(2000)
                 
