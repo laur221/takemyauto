@@ -280,9 +280,9 @@ class RaffleBot:
 
     def check_and_join_giveaway_pw(self, segment, log=None):
         """
-        Join raffle using ONLY Playwright - simple flow:
-        1. For each incomplete condition: Click Share/Link → Close popup tab → Click Check
-        2. After all conditions done → Automatically joined (no separate Join button needed)
+        Join raffle - simple flow:
+        1. For each condition: Click Share/Link → Close popup tab → Click Check
+        2. After all 4 conditions → Automatically joined
         """
         try:
             from playwright.sync_api import sync_playwright
@@ -291,7 +291,6 @@ class RaffleBot:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
                 
-                # Load cookies from Redis
                 cookies = self.load_cookies(log)
                 if cookies:
                     context.add_cookies(cookies)
@@ -311,75 +310,51 @@ class RaffleBot:
                     browser.close()
                     return {"status": "success", "already_joined": True}
                 
-                # SIMPLE FLOW: Click Share/Link → Close tab → Click Check for each condition
-                conditions_to_complete = [
-                    {"name": "Facebook", "type": "share"},
-                    {"name": "Twitter", "type": "share"},
-                    {"name": "Discord", "type": "link"},
-                    {"name": "Reddit", "type": "share"}
-                ]
+                # Process 4 conditions: Facebook Share, Twitter Share, Reddit Share, Discord Link
+                conditions = ["Facebook", "Twitter", "Reddit", "Discord"]
                 
-                for i, cond in enumerate(conditions_to_complete):
+                for i, cond_name in enumerate(conditions):
                     if log:
-                        log(f"[PW] [{i+1}/4] Processing {cond['name']} ({cond['type']})...")
+                        log(f"[PW] [{i+1}/4] Processing {cond_name}...")
                     
                     # Find and click Share/Link button
-                    share_buttons = page.locator("text=/Share|Link/i").all()
-                    
-                    button_clicked = False
-                    for btn in share_buttons:
-                        try:
-                            btn_text = btn.text_content()
-                            if btn_text and btn_text.strip().lower() in ["share", "link"]:
-                                if btn.is_visible(timeout=2000):
-                                    if log:
-                                        log(f"[PW] Clicking {cond['type']} button for {cond['name']}...")
-                                    
-                                    # Click button - opens popup tab
-                                    with context.expect_page() as popup_info:
-                                        btn.click()
-                                    
-                                    # Wait for popup to open
-                                    page.wait_for_timeout(1000)
-                                    
-                                    # Close popup tab
-                                    new_page = popup_info.value
-                                    new_page.close()
-                                    if log:
-                                        log(f"[PW] Closed {cond['name']} tab")
-                                    
-                                    page.wait_for_timeout(500)
-                                    button_clicked = True
-                                    break
-                        except Exception as e:
+                    try:
+                        share_btn = page.locator("text=/Share|Link/i").nth(i)
+                        
+                        if share_btn.is_visible(timeout=3000):
                             if log:
-                                log(f"[PW] Error clicking button: {e}")
-                    
-                    if not button_clicked:
-                        if log:
-                            log(f"[PW] Could not click {cond['name']} button, continuing...")
-                    
-                    # Now click CHECK button
-                    page.wait_for_timeout(500)
-                    check_btns = page.locator("text=/Check/i").all()
-                    
-                    check_clicked = False
-                    for check_btn in check_btns:
-                        try:
-                            if check_btn.is_visible(timeout=2000):
-                                if log:
-                                    log(f"[PW] Clicking CHECK for {cond['name']}...")
-                                check_btn.click()
-                                page.wait_for_timeout(1500)
-                                check_clicked = True
-                                break
-                        except Exception as e:
+                                log(f"[PW] Clicking Share/Link for {cond_name}...")
+                            
+                            # Click button - opens popup tab
+                            with context.expect_page() as new_page_info:
+                                share_btn.click()
+                            
+                            # Get the new popup tab and close it
+                            popup_page = new_page_info.value
+                            page.wait_for_timeout(1000)
+                            popup_page.close()
+                            
                             if log:
-                                log(f"[PW] Error clicking check: {e}")
-                    
-                    if not check_clicked:
+                                log(f"[PW] Closed {cond_name} popup tab")
+                            
+                            page.wait_for_timeout(500)
+                    except Exception as e:
                         if log:
-                            log(f"[PW] Could not click CHECK for {cond['name']}")
+                            log(f"[PW] Error with {cond_name} Share: {e}")
+                    
+                    # Click Check button
+                    try:
+                        check_btn = page.locator("text=Check").nth(i)
+                        page.wait_for_timeout(500)
+                        
+                        if check_btn.is_visible(timeout=3000):
+                            if log:
+                                log(f"[PW] Clicking Check for {cond_name}...")
+                            check_btn.click()
+                            page.wait_for_timeout(1500)
+                    except Exception as e:
+                        if log:
+                            log(f"[PW] Error clicking Check for {cond_name}: {e}")
                 
                 # After all conditions - check if automatically joined
                 page.wait_for_timeout(2000)
