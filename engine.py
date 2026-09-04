@@ -592,7 +592,7 @@ class RaffleBot:
         driver = Driver(
             uc=True,
             user_data_dir=self.session_dir,
-            headless=False,
+            headless=True,
             agent=USER_AGENT,
             chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
                          "--disable-extensions,--no-first-run,--mute-audio,"
