@@ -327,86 +327,77 @@ class RaffleBot:
                 if log:
                     log(f"[DEBUG] Not joined, processing conditions")
                 
-                # Process conditions by finding non-completed items
-                # Each condition is a DIV with class "_base_vdxqb_1" (not completed)
-                # Completed ones have "_completed_vdxqb_20"
-                # The action button is inside a DIV with class "_action_vdxqb_16"
+                # Process conditions by finding and clicking action buttons
+                # Use text-based locators to avoid dynamic class names
+                # Buttons have text "Share" or "Link"
                 
                 for attempt in range(3):  # Max 3 attempts to complete all conditions
-                    # Get condition status via JavaScript
-                    status = page.evaluate("""() => {
-                        const items = document.querySelectorAll('._base_vdxqb_1');
-                        const result = [];
-                        items.forEach((item, idx) => {
-                            const isCompleted = item.classList.contains('_completed_vdxqb_20');
-                            const actionBtn = item.querySelector('._action_vdxqb_16');
-                            const titleEl = item.querySelector('._title_vdxqb_20');
-                            const title = titleEl?.textContent?.trim() || '';
-                            const actionText = actionBtn?.textContent?.trim() || '';
-                            result.push({
-                                idx,
-                                isCompleted,
-                                title,
-                                actionText,
-                                hasAction: !!actionBtn
-                            });
-                        });
-                        return result;
+                    # Check how many conditions are still pending (not DONE)
+                    pending = page.evaluate("""() => {
+                        const text = document.body.innerText;
+                        const doneCount = (text.match(/DONE/g) || []).length;
+                        const shareCount = (text.match(/Share the raffle/g) || []).length;
+                        const linkCount = (text.match(/Link (your|and)/g) || []).length;
+                        const youReIn = text.includes("You're in");
+                        return {
+                            doneCount,
+                            shareCount,
+                            linkCount,
+                            youReIn,
+                            totalConditions: shareCount + linkCount
+                        };
                     }""")
                     
                     if log:
-                        log(f"[DEBUG] Condition status: {len(status)} items found")
+                        log(f"[DEBUG] Status: {pending['doneCount']} DONE, {pending['totalConditions']} total, you're in: {pending['youReIn']}")
                     
-                    # Find non-completed conditions
-                    non_completed = [s for s in status if not s['isCompleted'] and s['hasAction']]
-                    
-                    if not non_completed:
+                    if pending['youReIn']:
                         if log:
-                            log(f"[DEBUG] All conditions completed or no actions needed")
+                            log(f"[DEBUG] Already joined!")
                         break
                     
-                    # Process first non-completed condition
-                    cond = non_completed[0]
-                    cond_idx = cond['idx']
-                    cond_title = cond['title']
-                    cond_action = cond['actionText']
-                    
-                    if log:
-                        log(f"[DEBUG] Processing condition {cond_idx}: {cond_title} (action: {cond_action})")
-                        log(f"[PW] [{cond_idx+1}] Processing {cond_title[:30]}...")
-                    
-                    # Click the action button
-                    try:
-                        action_btn = page.locator(f'._base_vdxqb_1:not([class*="_completed_vdxqb_20"]) ._action_vdxqb_16').first
-                        
-                        if action_btn.is_visible(timeout=3000):
-                            if log:
-                                log(f"[DEBUG] Action button found, clicking")
-                                log(f"[PW] Clicking {cond_action} for {cond_title[:30]}")
-                            
-                            # Check if it opens a popup or just completes inline
-                            with context.expect_page() as new_page_info:
-                                action_btn.click()
-                            
-                            # Close popup if it opened
-                            popup_page = new_page_info.value
-                            if popup_page:
-                                page.wait_for_timeout(1000)
-                                popup_page.close()
-                                if log:
-                                    log(f"[DEBUG] Popup closed")
-                            
-                            page.wait_for_timeout(2000)
-                            
-                            if log:
-                                log(f"[DEBUG] Action {cond_action} completed, waiting for status update")
-                        else:
-                            if log:
-                                log(f"[DEBUG] Action button NOT visible for condition {cond_idx}")
-                    except Exception as e:
+                    if pending['doneCount'] >= pending['totalConditions']:
                         if log:
-                            log(f"[DEBUG] ERROR action for condition {cond_idx}: {str(e)[:80]}")
-                            log(f"[PW] Error: {e}")
+                            log(f"[DEBUG] All conditions done")
+                        break
+                    
+                    # Find and click action buttons
+                    # Try Share first, then Link
+                    clicked = False
+                    
+                    for action_text in ["Share", "Link"]:
+                        try:
+                            # Find buttons by text content
+                            action_btn = page.locator(f'button:has-text("{action_text}")').first
+                            
+                            if action_btn.is_visible(timeout=2000):
+                                if log:
+                                    log(f"[DEBUG] Found {action_text} button, clicking")
+                                    log(f"[PW] Clicking {action_text}...")
+                                
+                                with context.expect_page() as new_page_info:
+                                    action_btn.click()
+                                
+                                popup_page = new_page_info.value
+                                if popup_page:
+                                    page.wait_for_timeout(1000)
+                                    popup_page.close()
+                                    if log:
+                                        log(f"[DEBUG] Popup closed after {action_text}")
+                                
+                                page.wait_for_timeout(2000)
+                                clicked = True
+                                if log:
+                                    log(f"[DEBUG] {action_text} clicked successfully")
+                                break
+                        except Exception as e:
+                            if log:
+                                log(f"[DEBUG] No {action_text} button found: {str(e)[:50]}")
+                    
+                    if not clicked:
+                        if log:
+                            log(f"[DEBUG] No action button found to click")
+                        break
                     
                     page.wait_for_timeout(1000)
                 
