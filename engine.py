@@ -294,7 +294,7 @@ class RaffleBot:
                 log(f"[DEBUG] Starting join flow for {segment}")
             
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'])
                 context = browser.new_context()
                 
                 cookies = self.load_cookies(log)
@@ -308,30 +308,18 @@ class RaffleBot:
                     log(f"[DEBUG] Navigating to {segment}")
                 page.goto(f"https://takemyskins.com/giveaways/{segment}", wait_until="networkidle", timeout=30000)
                 
-                # Wait for conditions to appear in the DOM
+                # Wait for Vue.js to render - try multiple approaches
                 if log:
-                    log(f"[DEBUG] Waiting for conditions to render...")
+                    log(f"[DEBUG] Waiting for page content...")
                 
-                try:
-                    page.wait_for_function("""() => {
-                        const html = document.documentElement.outerHTML;
-                        return html.includes('preconditions') || 
-                               html.includes('Share the raffle') ||
-                               html.includes('DONE') ||
-                               html.includes('Link your Discord');
-                    }""", timeout=15000)
-                    if log:
-                        log(f"[DEBUG] Conditions detected on page")
-                except Exception as e:
-                    if log:
-                        log(f"[DEBUG] Timeout waiting for conditions: {str(e)[:50]}")
+                # Wait for network to be completely idle
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(10000)
                 
-                page.wait_for_timeout(3000)
-                
-                # Debug: check what text is actually on the page
-                page_text = page.evaluate("""() => document.body.innerText.slice(0, 300)""")
+                # Check if content is there
+                page_text = page.evaluate("""() => document.documentElement.outerHTML.slice(0, 500)""")
                 if log:
-                    log(f"[DEBUG] Page text preview: {page_text[:100]}...")
+                    log(f"[DEBUG] Page HTML preview: {page_text[:200]}...")
                 
                 if log:
                     log(f"[DEBUG] Page loaded, checking if already joined")
