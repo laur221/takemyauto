@@ -60,7 +60,16 @@ class RaffleBot:
             if log:
                 log("[SESSION] Nu exista cookies salvate")
             return None
-        return data.get("cookies") or []
+        raw_cookies = data.get("cookies") or []
+        # Fix expired cookies by setting expiry 5 years into the future
+        future_expiry = time.time() + 86400 * 365 * 5
+        clean_cookies = []
+        for c in raw_cookies:
+            if isinstance(c, dict):
+                c_copy = dict(c)
+                c_copy["expires"] = future_expiry
+                clean_cookies.append(c_copy)
+        return clean_cookies
 
     def _build_http(self, log=None):
         session = requests.Session()
