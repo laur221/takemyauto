@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import threading
 import time
@@ -27,7 +27,7 @@ class RaffleBot:
         self._user_id = None
         self._profile_cache = None
 
-    # -- helpers ----------------------------------------------------------
+    # ── helpers ──────────────────────────────────────────────────────────
 
     def _session_file(self):
         return os.path.join(self.session_dir, "tms_cookies.json")
@@ -114,7 +114,7 @@ class RaffleBot:
         self._http = self._build_http(log)
         return self._http
 
-    # -- API methods ------------------------------------------------------
+    # ── API methods ──────────────────────────────────────────────────────
 
     def fetch_root(self, log=None):
         session = self._ensure_session(log)
@@ -122,7 +122,7 @@ class RaffleBot:
 
     def list_active_giveaways_from_html(self, log=None):
         """
-        Folose?te Playwright headless browser pentru a scrape rafle ?i a intra �n ele.
+        Folosește Playwright headless browser pentru a scrape rafle și a intra în ele.
         API-ul TakeMySkins e blocat pentru bots, deci folosim browser real.
         """
         try:
@@ -133,7 +133,7 @@ class RaffleBot:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
                 
-                # �ncarca cookies din Redis (Upstash)
+                # Încarcă cookies din Redis (Upstash)
                 cookies = self.load_cookies(log)
                 if cookies:
                     context.add_cookies(cookies)
@@ -143,7 +143,7 @@ class RaffleBot:
                 page = context.new_page()
                 page.goto("https://takemyskins.com/", wait_until="networkidle", timeout=30000)
                 
-                # A?teapta ca raflele sa se �ncarce (Vue.js e lent)
+                # Așteaptă ca raflele să se încarce (Vue.js e lent)
                 page.wait_for_timeout(5000)
                 
                 # Extrage raflele
@@ -159,7 +159,7 @@ class RaffleBot:
                 if log:
                     log(f"[PW] Gasite {len(giveaways)} rafle pe site")
                 
-                # Converte?te �n format compatibil
+                # Convertește în format compatibil
                 result_giveaways = []
                 for g in giveaways:
                     result_giveaways.append({
@@ -197,8 +197,8 @@ class RaffleBot:
 
     def join_giveaway(self, ref, log=None):
         """
-        Intra �n rafla folosind Playwright (API-ul e blocat).
-        Completeaza automat condi?iile ?i apasa Join.
+        Intră în raflă folosind Playwright (API-ul e blocat).
+        Completează automat condițiile și apasă Join.
         """
         try:
             from playwright.sync_api import sync_playwright
@@ -208,7 +208,7 @@ class RaffleBot:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
                 
-                # �ncarca cookies din Redis (Upstash)
+                # Încarcă cookies din Redis (Upstash)
                 cookies = self.load_cookies(log)
                 if cookies:
                     context.add_cookies(cookies)
@@ -218,19 +218,19 @@ class RaffleBot:
                 page = context.new_page()
                 page.goto(f"https://takemyskins.com/giveaways/{ref}", wait_until="networkidle", timeout=30000)
                 
-                # A?tepta ca Vue.js sa se �ncarce
+                # Așteptă ca Vue.js să se încarce
                 page.wait_for_timeout(5000)
                 
-                # Verifica daca deja �nscris
+                # Verifică dacă deja înscris
                 is_joined = page.evaluate("""() => {
-                    return document.documentElement.outerHTML.includes("You're in");
+                    return document.body.innerText.includes("You're in");
                 }""")
                 
                 if is_joined:
                     browser.close()
                     return {"status": "success", "message": "Already joined"}
                 
-                # Completeaza condi?iile (click pe check pentru fiecare task)
+                # Completează condițiile (click pe check pentru fiecare task)
                 try:
                     check_buttons = page.locator('button:has-text("Check"), button:has-text("Verify")').all()
                     for btn in check_buttons:
@@ -260,7 +260,7 @@ class RaffleBot:
                     return {"status": "error", "error_message": str(e)}
                     
         except Exception as e:
-            # Fallback la API vechi daca Playwright e?ueaza
+            # Fallback la API vechi dacă Playwright eșuează
             if log:
                 log(f"[PW] Eroare Playwright join, fallback la API: {e}")
             session = self._ensure_session(log)
@@ -329,7 +329,7 @@ class RaffleBot:
                 page.wait_for_timeout(3000)
                 
                 # Debug: check what text is actually on the page
-                page_text = page.evaluate("""() => document.documentElement.outerHTML.slice(0, 300)""")
+                page_text = page.evaluate("""() => document.body.innerText.slice(0, 300)""")
                 if log:
                     log(f"[DEBUG] Page text preview: {page_text[:100]}...")
                 
@@ -338,7 +338,7 @@ class RaffleBot:
                 
                 # Check if already joined
                 is_joined = page.evaluate("""() => {
-                    return document.documentElement.outerHTML.includes("You're in");
+                    return document.body.innerText.includes("You're in");
                 }""")
                 
                 if is_joined:
@@ -358,11 +358,11 @@ class RaffleBot:
                 for attempt in range(3):  # Max 3 attempts to complete all conditions
                     # Check how many conditions are still pending (not DONE)
                     pending = page.evaluate("""() => {
-                        const text = document.documentElement.outerHTML;
-                        const doneCount = (text.match(/DONE/g) || []).length;
-                        const shareCount = (text.match(/Share the raffle/g) || []).length;
-                        const linkCount = (text.match(/Link (your|and)/g) || []).length;
-                        const youReIn = text.includes("You're in");
+                        const html = document.documentElement.outerHTML;
+                        const doneCount = (html.match(/DONE/g) || []).length;
+                        const shareCount = (html.match(/Share the raffle/g) || []).length;
+                        const linkCount = (html.match(/Link (your|and)/g) || []).length;
+                        const youReIn = html.includes("You're in");
                         return {
                             doneCount,
                             shareCount,
@@ -443,7 +443,7 @@ class RaffleBot:
                     log(f"[DEBUG] Checking if 'You're in!' appears")
                 
                 is_joined_final = page.evaluate("""() => {
-                    return document.documentElement.outerHTML.includes("You're in");
+                    return document.body.innerText.includes("You're in");
                 }""")
                 
                 if log:
@@ -489,7 +489,7 @@ class RaffleBot:
             timeout=20,
         )
         try:
-            # Verifica daca raspunsul e HTML (sesiune expirata)
+            # Verifică dacă răspunsul e HTML (sesiune expirată)
             content_type = r.headers.get('content-type', '')
             if 'text/html' in content_type or r.text.strip().startswith('<!DOCTYPE'):
                 if log:
@@ -499,7 +499,7 @@ class RaffleBot:
         except Exception:
             return {"status": "error", "error_message": r.text[:200]}
 
-    # -- profile / prizes ------------------------------------------------
+    # ── profile / prizes ────────────────────────────────────────────────
 
     def get_current_user(self, log=None):
         """Fetch the logged-in user profile (None if not authenticated).
@@ -604,7 +604,7 @@ class RaffleBot:
             "nickname": user.get("nickname"),
         }
 
-    # -- main methods -----------------------------------------------------
+    # ── main methods ─────────────────────────────────────────────────────
 
     def run_check(self, is_headless=True, log_func=None):
         def log(msg):
@@ -648,7 +648,7 @@ class RaffleBot:
 
                     log(f"-> Verific {name} (#{segment})...")
                     
-                    # Folose?te DOAR Playwright pentru a verifica ?i intra �n rafla
+                    # Folosește DOAR Playwright pentru a verifica și intra în raflă
                     res = self.check_and_join_giveaway_pw(segment, log)
                     status = res.get("status")
                     
@@ -677,7 +677,7 @@ class RaffleBot:
         finally:
             self._check_lock.release()
 
-    # -- scheduler --------------------------------------------------------
+    # ── scheduler ────────────────────────────────────────────────────────
 
     def start_background_scheduler(self, interval_seconds=21600, is_headless=True, log_func=None):
         if self._scheduler_thread and self._scheduler_thread.is_alive():
@@ -712,7 +712,7 @@ class RaffleBot:
     def stop_background_scheduler(self):
         self._scheduler_stop_event.set()
 
-    # -- steam QR login (browser, one-time) -------------------------------
+    # ── steam QR login (browser, one-time) ───────────────────────────────
 
     def get_steam_qr(self, refresh_ui_callback):
         """One-time Steam login via QR. Retries if Chrome becomes unresponsive.
