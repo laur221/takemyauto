@@ -603,6 +603,21 @@ class RaffleBot:
             driver.get("https://store.steampowered.com/login/")
             print("[QR] Pagina Steam incarcata, astept QR...")
             time.sleep(6)
+            
+            # Inchide cookie consent banner daca apare
+            try:
+                cookie_buttons = driver.find_elements("xpath", "//button[contains(text(), 'I Agree') or contains(text(), 'Accept') or contains(text(), 'OK')]")
+                for btn in cookie_buttons:
+                    try:
+                        if btn.is_displayed():
+                            btn.click()
+                            print("[QR] Cookie banner inchis")
+                            time.sleep(1)
+                            break
+                    except:
+                        pass
+            except:
+                pass
 
             qr_bytes = None
             qr_selectors = [
