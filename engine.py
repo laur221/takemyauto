@@ -281,7 +281,10 @@ class RaffleBot:
     def check_and_join_giveaway_pw(self, segment, log=None):
         """
         Verifica condițiile raflei și încearcă să intre folosind DOAR Playwright.
-        NU face API calls autentificate - totul din browser.
+        - Click pe Share links (deschide în tab nou)
+        - Close tab-urile noi
+        - Click Check pentru a marca condiții ca DONE
+        - După toate condițiile → Click Join
         """
         try:
             from playwright.sync_api import sync_playwright
@@ -310,26 +313,100 @@ class RaffleBot:
                     browser.close()
                     return {"status": "success", "already_joined": True}
                 
-                # Click Check buttons pentru condițiile
-                check_buttons = page.locator('button:has-text("Check")').all()
-                if log and check_buttons:
-                    log(f"[PW] Gasit {len(check_buttons)} conditii pentru {segment}")
+                # Găsește toate condițiile incomplete cu Share/Link buttons
+                conditions_to_complete = page.evaluate("""() => {
+                    const conditions = [];
+                    const conditionDivs = Array.from(document.querySelectorAll('[class*="precondition"], [class*="condition"]'));
+                    
+                    for (let div of conditionDivs) {
+                        const text = div.textContent;
+                        const isDone = text.includes('DONE');
+                        const hasShare = text.includes('Share');
+                        const hasLink = text.includes('Link');
+                        
+                        if (!isDone && (hasShare || hasLink)) {
+                            // Caută link-ul de share
+                            const link = div.querySelector('a[href*="facebook"], a[href*="twitter"], a[href*="discord"], a[href*="reddit"]');
+                            const checkBtn = div.querySelector('[class*="Check"]') || Array.from(div.querySelectorAll('*')).find(el => el.textContent.includes('Check'));
+                            
+                            if (link || checkBtn) {
+                                conditions.push({
+                                    name: text.slice(0, 50),
+                                    hasLink: !!link,
+                                    hasCheckBtn: !!checkBtn,
+                                    fullText: text.slice(0, 100)
+                                });
+                            }
+                        }
+                    }
+                    return conditions;
+                }""")
                 
-                for i, btn in enumerate(check_buttons):
-                    try:
-                        if btn.is_visible(timeout=2000):
+                if log:
+                    log(f"[PW] Găsite {len(conditions_to_complete)} condițiuni incomplete pentru {segment}")
+                
+                # Pentru fiecare condiție incompletă
+                for i, cond in enumerate(conditions_to_complete):
+                    if log:
+                        log(f"[PW] Condiție {i+1}/{len(conditions_to_complete)}: {cond['name'][:30]}")
+                    
+                    # Caută și click pe Share/Link button
+                    share_btns = page.locator('a').all()
+                    
+                    for btn in share_btns:
+                        try:
+                            btn_text = btn.text_content()
+                            btn_url = btn.get_attribute('href') or ''
+                            
+                            # Caută link-uri de share/link
+                            if any(x in btn_url.lower() for x in ['facebook', 'twitter', 'discord', 'reddit']) or \
+                               any(x in btn_text.lower() for x in ['share', 'link']):
+                                
+                                if btn.is_visible(timeout=2000):
+                                    if log:
+                                        log(f"[PW] Click share link pentru {segment}")
+                                    
+                                    # Click pe link (deschide în tab nou)
+                                    with context.expect_page() as popup_info:
+                                        btn.click()
+                                    
+                                    # Așteptă tab-ul nou să se deschidă
+                                    new_page = popup_info.value
+                                    page.wait_for_timeout(2000)
+                                    
+                                    # Close tab-ul nou
+                                    new_page.close()
+                                    if log:
+                                        log(f"[PW] Închis tab-ul de share")
+                                    
+                                    page.wait_for_timeout(500)
+                                    break
+                        except Exception as e:
                             if log:
-                                log(f"[PW] Verific condiție #{i+1} pentru {segment}")
-                            btn.click()
-                            page.wait_for_timeout(1500)
-                    except Exception as e:
-                        if log:
-                            log(f"[PW] Eroare condiție: {e}")
+                                log(f"[PW] Eroare share: {e}")
+                    
+                    # După share, caută și click pe Check button
+                    page.wait_for_timeout(1000)
+                    
+                    # Caută Check button - e un text/element care apare după share
+                    check_elements = page.locator('text=/Check/i').all()
+                    for check_elem in check_elements:
+                        try:
+                            if check_elem.is_visible(timeout=2000):
+                                if log:
+                                    log(f"[PW] Click Check pentru condiție {i+1}")
+                                check_elem.click()
+                                page.wait_for_timeout(1000)
+                                break
+                        except Exception as e:
+                            if log:
+                                log(f"[PW] Eroare check: {e}")
                 
                 page.wait_for_timeout(2000)
                 
-                # Click Join button
+                # Caută Join button după ce s-au completat condițiile
                 join_btn = page.locator('button:has-text("Join"), button:has-text("Enter"), button:has-text("Participate")').first
+                
                 if join_btn.is_visible(timeout=5000):
                     if log:
                         log(f"[PW] Intra în raflă: {segment}")
@@ -348,12 +425,12 @@ class RaffleBot:
                         return {"status": "success", "joined": True}
                     else:
                         if log:
-                            log(f"[WARN] Click JOIN dar incert: {segment}")
+                            log(f"[WARN] Click JOIN: {segment}")
                         return {"status": "success", "joined": True}
                 else:
                     browser.close()
                     if log:
-                        log(f"[SKIP] {segment}: Buton JOIN nu gasit")
+                        log(f"[SKIP] {segment}: Join button not found")
                     return {"status": "error", "message": "Join button not found"}
                     
         except Exception as e:
