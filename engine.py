@@ -297,10 +297,17 @@ class RaffleBot:
                 cookies = self.load_cookies(log)
                 if cookies:
                     context.add_cookies(cookies)
+                    if log:
+                        log(f"[DEBUG] Loaded {len(cookies)} cookies")
                 
                 page = context.new_page()
+                if log:
+                    log(f"[DEBUG] Navigating to {segment}")
                 page.goto(f"https://takemyskins.com/giveaways/{segment}", wait_until="networkidle", timeout=30000)
                 page.wait_for_timeout(3000)
+                
+                if log:
+                    log(f"[DEBUG] Page loaded, checking if already joined")
                 
                 # Check if already joined
                 is_joined = page.evaluate("""() => {
@@ -309,76 +316,127 @@ class RaffleBot:
                 
                 if is_joined:
                     if log:
+                        log(f"[DEBUG] Already joined detected")
                         log(f"[PW] Already joined: {segment}")
                     browser.close()
                     return {"status": "success", "already_joined": True}
+                
+                if log:
+                    log(f"[DEBUG] Not joined, processing 4 conditions")
                 
                 # Process 4 conditions: Facebook Share, Twitter Share, Reddit Share, Discord Link
                 conditions = ["Facebook", "Twitter", "Reddit", "Discord"]
                 
                 for i, cond_name in enumerate(conditions):
                     if log:
+                        log(f"[DEBUG] ===== CONDITION {i+1}/4: {cond_name} =====")
                         log(f"[PW] [{i+1}/4] Processing {cond_name}...")
                     
                     # Find and click Share/Link button
                     try:
+                        if log:
+                            log(f"[DEBUG] Looking for Share/Link button (nth={i})")
+                        
                         share_btn = page.locator("text=/Share|Link/i").nth(i)
                         
                         if share_btn.is_visible(timeout=3000):
                             if log:
+                                log(f"[DEBUG] Share/Link button found, clicking")
                                 log(f"[PW] Clicking Share/Link for {cond_name}...")
                             
                             # Click button - opens popup tab
+                            if log:
+                                log(f"[DEBUG] Waiting for popup to open")
+                            
                             with context.expect_page() as new_page_info:
                                 share_btn.click()
                             
                             # Get the new popup tab and close it
                             popup_page = new_page_info.value
+                            popup_url = popup_page.url
+                            
+                            if log:
+                                log(f"[DEBUG] Popup opened: {popup_url[:60]}...")
+                                log(f"[DEBUG] Closing popup tab")
+                            
                             page.wait_for_timeout(1000)
                             popup_page.close()
                             
                             if log:
+                                log(f"[DEBUG] Popup closed for {cond_name}")
                                 log(f"[PW] Closed {cond_name} popup tab")
                             
                             page.wait_for_timeout(500)
+                        else:
+                            if log:
+                                log(f"[DEBUG] Share/Link button NOT visible for {cond_name}")
                     except Exception as e:
                         if log:
+                            log(f"[DEBUG] ERROR Share/Link for {cond_name}: {str(e)[:80]}")
                             log(f"[PW] Error with {cond_name} Share: {e}")
                     
                     # Click Check button
                     try:
+                        if log:
+                            log(f"[DEBUG] Looking for Check button (nth={i})")
+                        
                         check_btn = page.locator("text=Check").nth(i)
                         page.wait_for_timeout(500)
                         
                         if check_btn.is_visible(timeout=3000):
                             if log:
+                                log(f"[DEBUG] Check button found, clicking")
                                 log(f"[PW] Clicking Check for {cond_name}...")
+                            
                             check_btn.click()
+                            
+                            if log:
+                                log(f"[DEBUG] Check button clicked for {cond_name}")
+                            
                             page.wait_for_timeout(1500)
+                            
+                            if log:
+                                log(f"[DEBUG] Condition {cond_name} complete, waiting")
+                        else:
+                            if log:
+                                log(f"[DEBUG] Check button NOT visible for {cond_name}")
                     except Exception as e:
                         if log:
+                            log(f"[DEBUG] ERROR Check for {cond_name}: {str(e)[:80]}")
                             log(f"[PW] Error clicking Check for {cond_name}: {e}")
                 
                 # After all conditions - check if automatically joined
+                if log:
+                    log(f"[DEBUG] All 4 conditions done, waiting 2s before final check")
+                
                 page.wait_for_timeout(2000)
+                
+                if log:
+                    log(f"[DEBUG] Checking if 'You're in!' appears")
                 
                 is_joined_final = page.evaluate("""() => {
                     return document.body.innerText.includes("You're in");
                 }""")
                 
+                if log:
+                    log(f"[DEBUG] Final result: {'JOINED!' if is_joined_final else 'NOT JOINED'}")
+                
                 browser.close()
                 
                 if is_joined_final:
                     if log:
+                        log(f"[DEBUG] SUCCESS - Joined raffle {segment}")
                         log(f"[OK] JOINED: {segment}")
                     return {"status": "success", "joined": True}
                 else:
                     if log:
+                        log(f"[DEBUG] WARNING - Conditions done but not joined: {segment}")
                         log(f"[WARN] Conditions completed but not joined: {segment}")
                     return {"status": "success", "joined": False}
                     
         except Exception as e:
             if log:
+                log(f"[DEBUG] EXCEPTION: {str(e)[:150]}")
                 log(f"[PW] Error: {segment}: {e}")
             return {"status": "error", "message": str(e)}
 
