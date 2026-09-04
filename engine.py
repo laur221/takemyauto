@@ -287,6 +287,8 @@ class RaffleBot:
         try:
             from playwright.sync_api import sync_playwright
             
+            print(f"[DEBUG] Starting join flow for {segment}")
+            
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
