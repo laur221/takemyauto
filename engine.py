@@ -280,12 +280,13 @@ class RaffleBot:
 
     def check_and_join_giveaway_pw(self, segment, log=None):
         """
-        Join raffle - correct flow based on actual page structure:
-        1. Navigate to raffle page
-        2. Find condition items with class "_base_vdxqb_1" (not completed)
-        3. For each non-completed condition, click the action button ("Share"/"Link")
-        4. Wait for condition to show as DONE
-        5. After all conditions done, automatically joined
+        Join raffle - robust flow:
+        1. Navigate to giveaway page
+        2. Wait for Vue to load precondition items
+        3. Check if already joined ("You're in!")
+        4. Find non-completed condition items
+        5. For each pending item, click its action button ("Share"/"Link") and close popup
+        6. Verify "You're in!" appears
         """
         try:
             from playwright.sync_api import sync_playwright
@@ -294,165 +295,139 @@ class RaffleBot:
                 log(f"[DEBUG] Starting join flow for {segment}")
             
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'])
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+                )
                 context = browser.new_context()
                 
                 cookies = self.load_cookies(log)
                 if cookies:
                     context.add_cookies(cookies)
                     if log:
-                        log(f"[DEBUG] Loaded {len(cookies)} cookies")
+                        log(f"[DEBUG] Loaded {len(cookies)} cookies into Playwright context")
                 
                 page = context.new_page()
                 if log:
                     log(f"[DEBUG] Navigating to {segment}")
-                page.goto(f"https://takemyskins.com/giveaways/{segment}", wait_until="networkidle", timeout=30000)
                 
-                # Wait for Vue.js to render - try multiple approaches
+                page.goto(f"https://takemyskins.com/giveaways/{segment}", wait_until="domcontentloaded", timeout=30000)
+                
+                # Wait for Vue.js app to mount preconditions section
                 if log:
-                    log(f"[DEBUG] Waiting for page content...")
+                    log(f"[DEBUG] Waiting for Vue preconditions section...")
                 
-                # Wait for network to be completely idle
-                page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(10000)
+                try:
+                    page.wait_for_function(
+                        "() => document.body.innerText.includes('Share the raffle') || document.body.innerText.includes('Link your Discord') || document.body.innerText.includes(\"You're in\")",
+                        timeout=15000
+                    )
+                    if log:
+                        log(f"[DEBUG] Preconditions section loaded successfully")
+                except Exception as e:
+                    if log:
+                        log(f"[DEBUG] Timeout waiting for preconditions: {str(e)[:60]}")
                 
-                # Check if content is there
-                page_text = page.evaluate("""() => document.documentElement.outerHTML.slice(0, 500)""")
-                if log:
-                    log(f"[DEBUG] Page HTML preview: {page_text[:200]}...")
-                
-                if log:
-                    log(f"[DEBUG] Page loaded, checking if already joined")
+                page.wait_for_timeout(2000)
                 
                 # Check if already joined
-                is_joined = page.evaluate("""() => {
-                    return document.body.innerText.includes("You're in");
-                }""")
-                
+                is_joined = page.evaluate("""() => document.body.innerText.includes("You're in")""")
                 if is_joined:
                     if log:
-                        log(f"[DEBUG] Already joined detected")
+                        log(f"[DEBUG] Already joined: {segment}")
                         log(f"[PW] Already joined: {segment}")
                     browser.close()
                     return {"status": "success", "already_joined": True}
                 
-                if log:
-                    log(f"[DEBUG] Not joined, processing conditions")
-                
-                # Process conditions by finding and clicking action buttons
-                # Use text-based locators to avoid dynamic class names
-                # Buttons have text "Share" or "Link"
-                
-                for attempt in range(3):  # Max 3 attempts to complete all conditions
-                    # Check how many conditions are still pending (not DONE)
-                    pending = page.evaluate("""() => {
-                        const html = document.documentElement.outerHTML;
-                        const doneCount = (html.match(/DONE/g) || []).length;
-                        const shareCount = (html.match(/Share the raffle/g) || []).length;
-                        const linkCount = (html.match(/Link (your|and)/g) || []).length;
-                        const youReIn = html.includes("You're in");
+                # Loop through pending condition cards
+                for attempt in range(5):
+                    # Find first pending condition card
+                    pending_info = page.evaluate("""() => {
+                        const cards = Array.from(document.querySelectorAll('div')).filter(d => {
+                            const hasAction = d.querySelector('div[class*="action"], p[class*="action"], [class*="action"]');
+                            const t = d.innerText || '';
+                            return hasAction && t.length < 150 && (t.includes('Share the raffle') || t.includes('Link your Discord') || t.includes('Link and confirm'));
+                        });
+                        
+                        const pending = cards.filter(c => !c.innerText.includes('DONE'));
+                        if (pending.length === 0) {
+                            return { allDone: true, count: cards.length };
+                        }
+                        
+                        const first = pending[0];
                         return {
-                            doneCount,
-                            shareCount,
-                            linkCount,
-                            youReIn,
-                            totalConditions: shareCount + linkCount
+                            allDone: false,
+                            title: first.innerText.replace(/\\n+/g, ' ').slice(0, 60),
+                            pendingCount: pending.length,
+                            totalCount: cards.length
                         };
                     }""")
                     
                     if log:
-                        log(f"[DEBUG] Status: {pending['doneCount']} DONE, {pending['totalConditions']} total, you're in: {pending['youReIn']}")
+                        log(f"[DEBUG] Status attempt {attempt+1}: {pending_info}")
                     
-                    if pending['youReIn']:
+                    if pending_info.get('allDone'):
                         if log:
-                            log(f"[DEBUG] Already joined!")
+                            log(f"[DEBUG] All condition cards are DONE!")
                         break
                     
-                    if pending['doneCount'] >= pending['totalConditions']:
-                        if log:
-                            log(f"[DEBUG] All conditions done")
-                        break
-                    
-                    # Find and click action buttons
-                    # Try Share first, then Link
-                    clicked = False
-                    
-                    for action_text in ["Share", "Link"]:
-                        try:
-                            # Find buttons by text content
-                            action_btn = page.locator(f'button:has-text("{action_text}")').first
-                            
-                            if action_btn.is_visible(timeout=2000):
-                                if log:
-                                    log(f"[DEBUG] Found {action_text} button, clicking")
-                                    log(f"[PW] Clicking {action_text}...")
-                                
-                                with context.expect_page() as new_page_info:
-                                    action_btn.click()
-                                
-                                popup_page = new_page_info.value
-                                if popup_page:
-                                    page.wait_for_timeout(1000)
-                                    popup_page.close()
-                                    if log:
-                                        log(f"[DEBUG] Popup closed after {action_text}")
-                                
-                            page.wait_for_timeout(3000)
-                            
-                            if log:
-                                log(f"[DEBUG] {action_text} clicked successfully")
-                            break
-                        except Exception as e:
-                            if log:
-                                log(f"[DEBUG] No {action_text} button found: {str(e)[:50]}")
-                    
-                    if not clicked:
-                        if log:
-                            log(f"[DEBUG] No action button found to click")
-                        break
-                    
-                    # Wait for the condition to update (DONE)
-                    page.wait_for_timeout(3000)
-                    
-                    # Verify the condition is now done
-                    still_pending = page.evaluate("""() => {
-                        return !document.documentElement.outerHTML.includes("DONE");
-                    }""")
+                    cond_title = pending_info.get('title', 'Condition')
                     if log:
-                        log(f"[DEBUG] Still pending after click: {still_pending}")
+                        log(f"[DEBUG] Processing pending condition: {cond_title}")
+                        log(f"[PW] Processing {cond_title[:30]}...")
+                    
+                    # Click the action button on the first non-DONE card
+                    try:
+                        with context.expect_page(timeout=5000) as new_page_info:
+                            page.evaluate("""() => {
+                                const cards = Array.from(document.querySelectorAll('div')).filter(d => {
+                                    const hasAction = d.querySelector('div[class*="action"], p[class*="action"], [class*="action"]');
+                                    const t = d.innerText || '';
+                                    return hasAction && t.length < 150 && (t.includes('Share the raffle') || t.includes('Link your Discord') || t.includes('Link and confirm'));
+                                });
+                                const firstPending = cards.find(c => !c.innerText.includes('DONE'));
+                                if (firstPending) {
+                                    const btn = firstPending.querySelector('div[class*="action"], p[class*="action"], [class*="action"]') || firstPending;
+                                    btn.click();
+                                }
+                            }""")
+                        
+                        popup_page = new_page_info.value
+                        if popup_page:
+                            popup_url = getattr(popup_page, 'url', '')
+                            if log:
+                                log(f"[DEBUG] Opened popup: {popup_url[:60]}")
+                            page.wait_for_timeout(1500)
+                            popup_page.close()
+                            if log:
+                                log(f"[DEBUG] Closed popup tab")
+                    except Exception as popup_err:
+                        if log:
+                            log(f"[DEBUG] Click completed (no popup or error): {str(popup_err)[:60]}")
+                    
+                    page.wait_for_timeout(3000)
                 
-                # After all conditions - wait and check if automatically joined
+                # Final check after conditions
+                page.wait_for_timeout(3000)
+                is_joined_final = page.evaluate("""() => document.body.innerText.includes("You're in")""")
+                
                 if log:
-                    log(f"[DEBUG] All conditions processed, waiting 2s before final check")
-                
-                page.wait_for_timeout(2000)
-                
-                if log:
-                    log(f"[DEBUG] Checking if 'You're in!' appears")
-                
-                is_joined_final = page.evaluate("""() => {
-                    return document.body.innerText.includes("You're in");
-                }""")
-                
-                if log:
-                    log(f"[DEBUG] Final result: {'JOINED!' if is_joined_final else 'NOT JOINED'}")
+                    log(f"[DEBUG] Final check result: {'JOINED!' if is_joined_final else 'NOT JOINED'}")
                 
                 browser.close()
                 
                 if is_joined_final:
                     if log:
-                        log(f"[DEBUG] SUCCESS - Joined raffle {segment}")
                         log(f"[OK] JOINED: {segment}")
                     return {"status": "success", "joined": True}
                 else:
                     if log:
-                        log(f"[DEBUG] WARNING - Conditions done but not joined: {segment}")
                         log(f"[WARN] Conditions completed but not joined: {segment}")
                     return {"status": "success", "joined": False}
                     
         except Exception as e:
             if log:
-                log(f"[DEBUG] EXCEPTION: {str(e)[:150]}")
+                log(f"[DEBUG] EXCEPTION in check_and_join_giveaway_pw: {str(e)[:150]}")
                 log(f"[PW] Error: {segment}: {e}")
             return {"status": "error", "message": str(e)}
 
