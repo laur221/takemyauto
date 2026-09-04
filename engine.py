@@ -278,6 +278,90 @@ class RaffleBot:
                     error_text = f"Failed to parse response (status {r.status_code})"
                 return {"status": "error", "error_message": error_text}
 
+    def check_and_join_giveaway_pw(self, segment, log=None):
+        """
+        Verifica condițiile raflei și încearcă să intre folosind DOAR Playwright.
+        NU face API calls autentificate - totul din browser.
+        """
+        try:
+            from playwright.sync_api import sync_playwright
+            
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context()
+                
+                # Încarcă cookies din Redis
+                cookies = self.load_cookies(log)
+                if cookies:
+                    context.add_cookies(cookies)
+                
+                page = context.new_page()
+                page.goto(f"https://takemyskins.com/giveaways/{segment}", wait_until="networkidle", timeout=30000)
+                page.wait_for_timeout(3000)
+                
+                # Verifica dacă deja inscris
+                is_joined = page.evaluate("""() => {
+                    return document.body.innerText.includes("You're in");
+                }""")
+                
+                if is_joined:
+                    if log:
+                        log(f"[PW] Deja inscris: {segment}")
+                    browser.close()
+                    return {"status": "success", "already_joined": True}
+                
+                # Click Check buttons pentru condițiile
+                check_buttons = page.locator('button:has-text("Check")').all()
+                if log and check_buttons:
+                    log(f"[PW] Gasit {len(check_buttons)} conditii pentru {segment}")
+                
+                for i, btn in enumerate(check_buttons):
+                    try:
+                        if btn.is_visible(timeout=2000):
+                            if log:
+                                log(f"[PW] Verific condiție #{i+1} pentru {segment}")
+                            btn.click()
+                            page.wait_for_timeout(1500)
+                    except Exception as e:
+                        if log:
+                            log(f"[PW] Eroare condiție: {e}")
+                
+                page.wait_for_timeout(2000)
+                
+                # Click Join button
+                join_btn = page.locator('button:has-text("Join"), button:has-text("Enter"), button:has-text("Participate")').first
+                if join_btn.is_visible(timeout=5000):
+                    if log:
+                        log(f"[PW] Intra în raflă: {segment}")
+                    join_btn.click()
+                    page.wait_for_timeout(2000)
+                    
+                    # Verifica daca apare "You're in!"
+                    is_joined_after = page.evaluate("""() => {
+                        return document.body.innerText.includes("You're in");
+                    }""")
+                    
+                    browser.close()
+                    if is_joined_after:
+                        if log:
+                            log(f"[OK] INSCRIS: {segment}")
+                        return {"status": "success", "joined": True}
+                    else:
+                        if log:
+                            log(f"[WARN] Click JOIN dar incert: {segment}")
+                        return {"status": "success", "joined": True}
+                else:
+                    browser.close()
+                    if log:
+                        log(f"[SKIP] {segment}: Buton JOIN nu gasit")
+                    return {"status": "error", "message": "Join button not found"}
+                    
+        except Exception as e:
+            if log:
+                log(f"[PW] Eroare: {segment}: {e}")
+            return {"status": "error", "message": str(e)}
+
+
     def check_reward_conditions(self, condition, ga_id, log=None):
         session = self._ensure_session(log)
         r = session.post(
@@ -456,60 +540,24 @@ class RaffleBot:
                         continue
 
                     log(f"-> Verific {name} (#{segment})...")
-                    cond_data = self.get_conditions(segment, log)
                     
-                    # Skip rafle care returnează eroare (șterse/închise)
-                    if cond_data.get("status") == "error":
-                        error_msg = cond_data.get("error_message", "unknown")
-                        log(f"[SKIP] {name}: {error_msg}")
-                        continue
-                    
-                    cond_inner = cond_data.get("data") or cond_data
-
-                    if cond_inner.get("is_joined"):
-                        already_joined += 1
-                        log(f"[OK] Deja inscris (detail): {name}")
-                        continue
-
-                    conditions = cond_inner.get("conditions") or {}
-                    if conditions:
-                        pending = [
-                            code for code, c in conditions.items()
-                            if code != "join" and not c.get("verified")
-                        ]
-                        if pending:
-                            log(f"  -> Verific conditiile: {', '.join(pending)}")
-                            for code in pending:
-                                try:
-                                    check = self.check_reward_conditions(code, gid, log)
-                                    if check.get("verified"):
-                                        log(f"    [OK] {code} verificat")
-                                    else:
-                                        log(f"    [WARN] {code}: {check.get('error_message') or 'failed'}")
-                                except Exception as e:
-                                    log(f"    [ERR] check {code}: {e}")
-                            conditions = self.get_conditions(segment, log)
-                            cond_inner = conditions.get("data") or conditions
-                            still_pending = [
-                                code for code, c in (cond_inner.get("conditions") or {}).items()
-                                if code != "join" and not c.get("verified")
-                            ]
-                            if still_pending:
-                                skipped_conditions += 1
-                                log(f"[WAIT] {name}: conditii ramase: {', '.join(still_pending)}")
-                                continue
-
-                    res = self.join_giveaway(gid, log)
+                    # Folosește DOAR Playwright pentru a verifica și intra în raflă
+                    res = self.check_and_join_giveaway_pw(segment, log)
                     status = res.get("status")
+                    
                     if status == "success":
-                        joined_count += 1
-                        self.db.save_raffle(str(gid), "JOINED", item=name)
-                        log(f"[JOINED] INTRAT in {name}!")
+                        if res.get("already_joined"):
+                            already_joined += 1
+                            log(f"[OK] Deja inscris (PW): {name}")
+                        elif res.get("joined"):
+                            joined_count += 1
+                            self.db.save_raffle(str(gid), "JOINED", item=name)
+                            log(f"[JOINED] INTRAT in {name}!")
+                        else:
+                            log(f"[INFO] Join initiat: {name}")
                     else:
-                        msg = res.get("error_message") or "unknown"
-                        log(f"[WARN] {name}: {status} ({msg})")
-                        if "need_auth" in str(msg).lower():
-                            log("[AUTH] Nu esti logat. Ruleaza login-ul Steam din UI.")
+                        msg = res.get("message") or "unknown error"
+                        log(f"[SKIP] {name}: {msg}")
                 except Exception as e:
                     log(f"Eroare la procesarea raflei: {e}")
 
