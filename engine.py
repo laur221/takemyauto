@@ -314,9 +314,11 @@ class RaffleBot:
                 
                 try:
                     page.wait_for_function("""() => {
-                        return document.body.innerText.includes('preconditions') || 
-                               document.body.innerText.includes('Share the raffle') ||
-                               document.body.innerText.includes('DONE');
+                        const html = document.documentElement.outerHTML;
+                        return html.includes('preconditions') || 
+                               html.includes('Share the raffle') ||
+                               html.includes('DONE') ||
+                               html.includes('Link your Discord');
                     }""", timeout=15000)
                     if log:
                         log(f"[DEBUG] Conditions detected on page")
@@ -324,7 +326,12 @@ class RaffleBot:
                     if log:
                         log(f"[DEBUG] Timeout waiting for conditions: {str(e)[:50]}")
                 
-                page.wait_for_timeout(5000)
+                page.wait_for_timeout(3000)
+                
+                # Debug: check what text is actually on the page
+                page_text = page.evaluate("""() => document.body.innerText.slice(0, 300)""")
+                if log:
+                    log(f"[DEBUG] Page text preview: {page_text[:100]}...")
                 
                 if log:
                     log(f"[DEBUG] Page loaded, checking if already joined")
