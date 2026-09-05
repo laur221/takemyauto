@@ -357,8 +357,8 @@ class RaffleBot:
                     browser.close()
                     return {"status": "success", "already_joined": True}
                 
-                # Loop through pending condition cards
-                for attempt in range(5):
+                # Loop through pending condition cards (up to 10 attempts for Share + Check pairs)
+                for attempt in range(10):
                     # Find first pending condition card
                     pending_info = page.evaluate("""() => {
                         const cards = Array.from(document.querySelectorAll('div')).filter(d => {
@@ -373,9 +373,12 @@ class RaffleBot:
                         }
                         
                         const first = pending[0];
+                        const actionEl = first.querySelector('div[class*="action"], p[class*="action"], [class*="action"]');
+                        const actionText = actionEl ? actionEl.innerText.trim() : '';
                         return {
                             allDone: false,
                             title: first.innerText.replace(/\\n+/g, ' ').slice(0, 60),
+                            actionText: actionText,
                             pendingCount: pending.length,
                             totalCount: cards.length
                         };
@@ -390,13 +393,44 @@ class RaffleBot:
                         break
                     
                     cond_title = pending_info.get('title', 'Condition')
+                    action_text = pending_info.get('actionText', '')
+                    
                     if log:
                         log(f"[DEBUG] Processing pending condition: {cond_title}")
                         log(f"[PW] Processing {cond_title[:30]}...")
                     
                     # Click the action button on the first non-DONE card
                     try:
-                        with context.expect_page(timeout=5000) as new_page_info:
+                        is_check = "check" in action_text.lower()
+                        if not is_check:
+                            try:
+                                with context.expect_page(timeout=3000) as new_page_info:
+                                    page.evaluate("""() => {
+                                        const cards = Array.from(document.querySelectorAll('div')).filter(d => {
+                                            const hasAction = d.querySelector('div[class*="action"], p[class*="action"], [class*="action"]');
+                                            const t = d.innerText || '';
+                                            return hasAction && t.length < 150 && (t.includes('Share the raffle') || t.includes('Link your Discord') || t.includes('Link and confirm'));
+                                        });
+                                        const firstPending = cards.find(c => !c.innerText.includes('DONE'));
+                                        if (firstPending) {
+                                            const btn = firstPending.querySelector('div[class*="action"], p[class*="action"], [class*="action"]') || firstPending;
+                                            btn.click();
+                                        }
+                                    }""")
+                                popup_page = new_page_info.value
+                                if popup_page:
+                                    popup_url = getattr(popup_page, 'url', '')
+                                    if log:
+                                        log(f"[DEBUG] Opened popup: {popup_url[:50]}")
+                                    page.wait_for_timeout(1000)
+                                    popup_page.close()
+                                    if log:
+                                        log(f"[DEBUG] Closed popup tab")
+                            except Exception:
+                                if log:
+                                    log(f"[DEBUG] Clicked Share/Link action")
+                        else:
+                            # Inline "Check" button click
                             page.evaluate("""() => {
                                 const cards = Array.from(document.querySelectorAll('div')).filter(d => {
                                     const hasAction = d.querySelector('div[class*="action"], p[class*="action"], [class*="action"]');
@@ -409,21 +443,13 @@ class RaffleBot:
                                     btn.click();
                                 }
                             }""")
-                        
-                        popup_page = new_page_info.value
-                        if popup_page:
-                            popup_url = getattr(popup_page, 'url', '')
                             if log:
-                                log(f"[DEBUG] Opened popup: {popup_url[:60]}")
-                            page.wait_for_timeout(1500)
-                            popup_page.close()
-                            if log:
-                                log(f"[DEBUG] Closed popup tab")
+                                log(f"[DEBUG] Clicked inline Check button")
                     except Exception as popup_err:
                         if log:
-                            log(f"[DEBUG] Click completed (no popup or error): {str(popup_err)[:60]}")
+                            log(f"[DEBUG] Click error: {str(popup_err)[:60]}")
                     
-                    page.wait_for_timeout(3000)
+                    page.wait_for_timeout(1500)
                 
                 # Final check after conditions
                 page.wait_for_timeout(3000)
