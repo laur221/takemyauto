@@ -920,67 +920,91 @@ class RaffleBot:
                 _log("[ERR] Timeout - QR-ul nu a fost scanat in timp util.")
                 raise RuntimeError("Timpul a expirat. QR-ul Steam nu a fost scanat.")
 
-            _log("[AUTH] Steam detectat! Astept transferul sesiunii pe toate domeniile...")
-            time.sleep(10)
+            _log("[AUTH] Steam detectat! Astept finalizarea login-ului...")
+            time.sleep(8)
 
-            _log("[AUTH] Verific sesiunea pe steamcommunity.com...")
-            driver.get("https://steamcommunity.com/my/profile")
-            time.sleep(5)
-            community_url = driver.current_url
-            _log(f"[AUTH] Steam Community URL: {community_url[:80]}")
+            store_cookies = driver.get_cookies()
+            steam_cookie = None
+            session_id = None
+            for c in store_cookies:
+                if c.get("name") == "steamLoginSecure":
+                    steam_cookie = c
+                if c.get("name") == "sessionid":
+                    session_id = c
+            if not steam_cookie:
+                raise RuntimeError("steamLoginSecure cookie disparut dupa scan.")
+            _log(f"[AUTH] steamLoginSecure obtinut (domain: {steam_cookie.get('domain', '?')})")
+
+            _log("[AUTH] Transfer sesiune pe steamcommunity.com...")
+            driver.get("https://steamcommunity.com/")
+            time.sleep(3)
 
             community_cookies = driver.get_cookies()
             community_names = {c.get("name") for c in community_cookies}
-            if "steamLoginSecure" in community_names:
-                _log("[OK] Sesiune Steam Community confirmata!")
+            if "steamLoginSecure" not in community_names:
+                _log("[AUTH] Setez cookie manual pe steamcommunity.com...")
+                try:
+                    driver.add_cookie({
+                        "name": "steamLoginSecure",
+                        "value": steam_cookie["value"],
+                        "domain": "steamcommunity.com",
+                        "path": "/",
+                        "secure": True,
+                        "httpOnly": True,
+                    })
+                    if session_id:
+                        driver.add_cookie({
+                            "name": "sessionid",
+                            "value": session_id["value"],
+                            "domain": "steamcommunity.com",
+                            "path": "/",
+                            "secure": True,
+                        })
+                    _log("[OK] Cookie setat manual pe steamcommunity.com!")
+                except Exception as e:
+                    _log(f"[WARN] Eroare la setare cookie: {e}")
             else:
-                _log("[WARN] Sesiune Steam Community lipseste, incerc transfer manual...")
-                driver.get("https://store.steampowered.com/")
-                time.sleep(3)
-                driver.get("https://steamcommunity.com/login/home/?goto=")
-                time.sleep(5)
-                community_cookies = driver.get_cookies()
-                community_names = {c.get("name") for c in community_cookies}
-                if "steamLoginSecure" in community_names:
-                    _log("[OK] Transfer sesiune reusit!")
-                else:
-                    _log(f"[WARN] Cookies comunitate: {community_names}")
+                _log("[OK] Sesiune Steam Community deja activa!")
+
+            driver.get("https://steamcommunity.com/my/profile")
+            time.sleep(3)
+            _log(f"[AUTH] Steam Community URL: {driver.current_url[:80]}")
 
             _log("[AUTH] Navighez la TakeMySkins login...")
             driver.get(f"{API_BASE}/login/steam")
             time.sleep(5)
-            _log(f"[AUTH] URL dupa redirect: {driver.current_url[:80]}")
+            cur_url = driver.current_url
+            _log(f"[AUTH] URL dupa redirect: {cur_url[:80]}")
 
             for openid_wait in range(60):
                 cur_url = driver.current_url
                 if "steamcommunity.com/openid" in cur_url:
                     try:
                         clicked = driver.execute_script("""
-                            var btns = document.querySelectorAll('input[type="submit"], button[type="submit"], #imageLogin, input[name="action_sign_in"]');
+                            var btns = document.querySelectorAll(
+                                '#imageLogin, input[type="submit"], input[name="action_sign_in"], '
+                                + 'button[type="submit"]');
                             for (var i = 0; i < btns.length; i++) {
                                 if (btns[i].offsetParent !== null) {
                                     btns[i].click();
                                     return 'clicked: ' + (btns[i].id || btns[i].name || btns[i].type);
                                 }
                             }
-                            var allBtns = document.querySelectorAll('input, button, a');
-                            for (var j = 0; j < allBtns.length; j++) {
-                                var t = (allBtns[j].value || allBtns[j].innerText || '').toLowerCase();
-                                if (t.includes('sign in') || t.includes('login') || t.includes('allow')) {
-                                    allBtns[j].click();
-                                    return 'clicked-text: ' + t;
-                                }
-                            }
+                            var forms = document.querySelectorAll('form');
+                            if (forms.length > 0) { forms[0].submit(); return 'form-submit'; }
                             return null;
                         """)
                         if clicked:
-                            _log(f"[AUTH] OpenID form: {clicked}")
-                            time.sleep(5)
+                            _log(f"[AUTH] OpenID confirm: {clicked}")
+                            time.sleep(8)
+                            continue
                     except Exception:
                         pass
                 elif "takemyskins" in cur_url:
-                    _log(f"[AUTH] Redirectionat la TakeMySkins: {cur_url[:80]}")
+                    _log(f"[OK] Redirectionat la TakeMySkins: {cur_url[:80]}")
                     break
+                if openid_wait > 0 and openid_wait % 15 == 0:
+                    _log(f"[WAIT] OpenID flow... URL: {cur_url[:80]}")
                 time.sleep(1)
 
             cookies = None
