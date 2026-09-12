@@ -794,22 +794,14 @@ class RaffleBot:
                 pass
 
             qr_bytes = None
-            qr_selectors = [
-                "img[src*='blob:']",
-                "div[style*='--qr-bright-color']",
-                "div[class*='qr'] img",
-                "canvas",
-            ]
             for attempt in range(5):
                 # Remove any overlays/popups blocking the QR code
                 try:
                     driver.execute_script("""
-                        // Try clicking Accept All one more time (Steam cookie popup)
                         document.querySelectorAll('div.Focusable, button, [role="button"]').forEach(function(el) {
                             var t = (el.innerText || '').trim();
                             if (t === 'Accept All' || t === 'Got It') { el.click(); }
                         });
-                        // Remove fixed/sticky overlays that block the QR
                         document.querySelectorAll('div').forEach(function(e) {
                             var s = getComputedStyle(e);
                             if ((s.position === 'fixed' || s.position === 'sticky') && e.offsetHeight > 50) {
@@ -824,21 +816,51 @@ class RaffleBot:
                 except Exception:
                     pass
 
-                for sel in qr_selectors:
-                    try:
-                        elems = driver.find_elements("css selector", sel)
-                        for el in elems:
-                            if el.is_displayed():
-                                size = el.size or {}
-                                if size.get("width", 0) >= 120:
-                                    shot = el.screenshot_as_png
-                                    if shot and len(shot) > 1000:
-                                        qr_bytes = shot
-                                        break
-                        if qr_bytes:
-                            break
-                    except Exception:
-                        continue
+                # Extract QR via JS canvas (crisp nearest-neighbor upscale)
+                try:
+                    qr_b64 = driver.execute_script("""
+                        var img = document.querySelector('img[src*="blob:"]');
+                        if (!img || !img.naturalWidth) return null;
+                        var scale = 10;
+                        var pad = 4;
+                        var qw = img.naturalWidth * scale;
+                        var qh = img.naturalHeight * scale;
+                        var canvas = document.createElement('canvas');
+                        canvas.width = qw + pad * 2 * scale;
+                        canvas.height = qh + pad * 2 * scale;
+                        var ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.imageSmoothingEnabled = false;
+                        ctx.drawImage(img, pad * scale, pad * scale, qw, qh);
+                        return canvas.toDataURL('image/png').split(',')[1];
+                    """)
+                    if qr_b64 and len(qr_b64) > 100:
+                        import base64 as b64mod
+                        qr_bytes = b64mod.b64decode(qr_b64)
+                        print(f"[QR] Extracted via JS canvas (attempt {attempt+1})")
+                        break
+                except Exception:
+                    pass
+
+                # Fallback: element screenshot
+                if not qr_bytes:
+                    for sel in ["img[src*='blob:']", "div[style*='--qr-bright-color']", "canvas"]:
+                        try:
+                            elems = driver.find_elements("css selector", sel)
+                            for el in elems:
+                                if el.is_displayed():
+                                    size = el.size or {}
+                                    if size.get("width", 0) >= 100:
+                                        shot = el.screenshot_as_png
+                                        if shot and len(shot) > 500:
+                                            qr_bytes = shot
+                                            print(f"[QR] Fallback screenshot (attempt {attempt+1})")
+                                            break
+                            if qr_bytes:
+                                break
+                        except Exception:
+                            continue
                 if qr_bytes:
                     break
                 time.sleep(2)
