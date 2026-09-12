@@ -920,10 +920,68 @@ class RaffleBot:
                 _log("[ERR] Timeout - QR-ul nu a fost scanat in timp util.")
                 raise RuntimeError("Timpul a expirat. QR-ul Steam nu a fost scanat.")
 
-            time.sleep(3)
-            _log("[AUTH] Steam autentificat! Navighez la TakeMySkins login...")
+            _log("[AUTH] Steam detectat! Astept transferul sesiunii pe toate domeniile...")
+            time.sleep(10)
+
+            _log("[AUTH] Verific sesiunea pe steamcommunity.com...")
+            driver.get("https://steamcommunity.com/my/profile")
+            time.sleep(5)
+            community_url = driver.current_url
+            _log(f"[AUTH] Steam Community URL: {community_url[:80]}")
+
+            community_cookies = driver.get_cookies()
+            community_names = {c.get("name") for c in community_cookies}
+            if "steamLoginSecure" in community_names:
+                _log("[OK] Sesiune Steam Community confirmata!")
+            else:
+                _log("[WARN] Sesiune Steam Community lipseste, incerc transfer manual...")
+                driver.get("https://store.steampowered.com/")
+                time.sleep(3)
+                driver.get("https://steamcommunity.com/login/home/?goto=")
+                time.sleep(5)
+                community_cookies = driver.get_cookies()
+                community_names = {c.get("name") for c in community_cookies}
+                if "steamLoginSecure" in community_names:
+                    _log("[OK] Transfer sesiune reusit!")
+                else:
+                    _log(f"[WARN] Cookies comunitate: {community_names}")
+
+            _log("[AUTH] Navighez la TakeMySkins login...")
             driver.get(f"{API_BASE}/login/steam")
-            _log(f"[AUTH] Navigat la {API_BASE}/login/steam")
+            time.sleep(5)
+            _log(f"[AUTH] URL dupa redirect: {driver.current_url[:80]}")
+
+            for openid_wait in range(60):
+                cur_url = driver.current_url
+                if "steamcommunity.com/openid" in cur_url:
+                    try:
+                        clicked = driver.execute_script("""
+                            var btns = document.querySelectorAll('input[type="submit"], button[type="submit"], #imageLogin, input[name="action_sign_in"]');
+                            for (var i = 0; i < btns.length; i++) {
+                                if (btns[i].offsetParent !== null) {
+                                    btns[i].click();
+                                    return 'clicked: ' + (btns[i].id || btns[i].name || btns[i].type);
+                                }
+                            }
+                            var allBtns = document.querySelectorAll('input, button, a');
+                            for (var j = 0; j < allBtns.length; j++) {
+                                var t = (allBtns[j].value || allBtns[j].innerText || '').toLowerCase();
+                                if (t.includes('sign in') || t.includes('login') || t.includes('allow')) {
+                                    allBtns[j].click();
+                                    return 'clicked-text: ' + t;
+                                }
+                            }
+                            return null;
+                        """)
+                        if clicked:
+                            _log(f"[AUTH] OpenID form: {clicked}")
+                            time.sleep(5)
+                    except Exception:
+                        pass
+                elif "takemyskins" in cur_url:
+                    _log(f"[AUTH] Redirectionat la TakeMySkins: {cur_url[:80]}")
+                    break
+                time.sleep(1)
 
             cookies = None
             for wait_tick in range(30):
