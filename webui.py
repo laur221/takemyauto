@@ -136,7 +136,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
   .qrbox { display: none; flex-direction: column; align-items: center; gap: 8px; padding-top: 6px; }
   .qrbox.show { display: flex; }
-  .qrbox img { width: 200px; height: 200px; border-radius: 12px; background: #fff; padding: 8px; }
+  .qrbox img { width: 220px; height: 220px; border-radius: 4px; background: #fff; padding: 12px; }
   .qrbox .qstat { font-size: 13px; color: var(--green); }
   .sessline {
     display: flex; align-items: center; gap: 8px;

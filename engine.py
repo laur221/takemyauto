@@ -833,16 +833,7 @@ class RaffleBot:
                                 if size.get("width", 0) >= 120:
                                     shot = el.screenshot_as_png
                                     if shot and len(shot) > 1000:
-                                        from PIL import Image
-                                        from io import BytesIO
-                                        img = Image.open(BytesIO(shot))
-                                        w, h = img.size
-                                        margin_x = int(w * 0.1)
-                                        margin_y = int(h * 0.1)
-                                        img_crop = img.crop((margin_x, margin_y, w - margin_x, h - margin_y))
-                                        bio = BytesIO()
-                                        img_crop.save(bio, format='PNG')
-                                        qr_bytes = bio.getvalue()
+                                        qr_bytes = shot
                                         break
                         if qr_bytes:
                             break
