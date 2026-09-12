@@ -767,10 +767,23 @@ class RaffleBot:
             agent=USER_AGENT,
             chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
                          "--disable-extensions,--no-first-run,--mute-audio,"
-                         "--window-position=-32000,-32000,--window-size=1280,800",
+                         "--window-position=-32000,-32000,--window-size=1280,800,"
+                         "--disable-features=SameSiteByDefaultCookies,"
+                         "CookiesWithoutSameSiteMustBeSecure,"
+                         "ThirdPartyCookieDeprecation",
         )
         try:
             driver.set_page_load_timeout(30)
+
+            # Pre-visit steamcommunity.com to establish first-party cookie context
+            # so cross-domain settoken calls can set cookies there
+            try:
+                driver.get("https://steamcommunity.com/")
+                time.sleep(2)
+                _log("[AUTH] steamcommunity.com primed for cookies")
+            except Exception:
+                pass
+
             driver.get("https://store.steampowered.com/login/")
             _log("[AUTH] Pagina Steam incarcata, astept QR...")
             time.sleep(6)
@@ -920,10 +933,10 @@ class RaffleBot:
                 _log("[ERR] Timeout - QR-ul nu a fost scanat in timp util.")
                 raise RuntimeError("Timpul a expirat. QR-ul Steam nu a fost scanat.")
 
-            _log("[AUTH] Steam detectat! Astept finalizarea login-ului...")
-            time.sleep(10)
+            _log("[AUTH] Steam detectat! Astept finalizarea transferului de sesiune...")
+            time.sleep(12)
 
-            # Use CDP to get ALL cookies from all domains
+            # Use CDP to get ALL cookies from all domains (including cross-domain settoken results)
             all_cookies_data = {}
             try:
                 cdp_result = driver.execute_cdp_cmd('Network.getAllCookies', {})
@@ -934,119 +947,80 @@ class RaffleBot:
                         _log(f"[AUTH] steamLoginSecure pe {domain}")
             except Exception as e:
                 _log(f"[WARN] CDP getAllCookies eroare: {e}")
+                store_cookies = driver.get_cookies()
+                for c in store_cookies:
+                    if c.get("name") == "steamLoginSecure":
+                        all_cookies_data[c.get("domain", "store.steampowered.com")] = c["value"]
 
-            store_cookies = driver.get_cookies()
-            steam_cookie_val = None
-            session_id_val = None
-            for c in store_cookies:
-                if c.get("name") == "steamLoginSecure":
-                    steam_cookie_val = c.get("value")
-                if c.get("name") == "sessionid":
-                    session_id_val = c.get("value")
-
-            if not steam_cookie_val and not all_cookies_data:
+            if not all_cookies_data:
                 raise RuntimeError("steamLoginSecure cookie disparut dupa scan.")
 
-            community_cookie = all_cookies_data.get("steamcommunity.com") or all_cookies_data.get(".steamcommunity.com")
-            if community_cookie:
-                _log("[OK] Steam Community cookie gasit via CDP!")
-                # Navigate with community session
-                driver.get("https://steamcommunity.com/")
-                time.sleep(2)
+            has_community = any("steamcommunity" in d for d in all_cookies_data)
+            _log(f"[AUTH] Community cookie: {'DA' if has_community else 'NU'}")
 
-                _log("[AUTH] Navighez la TakeMySkins login...")
-                driver.get(f"{API_BASE}/login/steam")
-                time.sleep(5)
+            if not has_community:
+                _log("[AUTH] Incerc setare manuala cookie pe steamcommunity.com via CDP...")
+                store_val = next(iter(all_cookies_data.values()))
+                try:
+                    driver.execute_cdp_cmd('Network.setCookie', {
+                        'name': 'steamLoginSecure',
+                        'value': store_val,
+                        'domain': 'steamcommunity.com',
+                        'path': '/',
+                        'secure': True,
+                        'httpOnly': True,
+                        'sameSite': 'None',
+                    })
+                    _log("[AUTH] Cookie setat via CDP pe steamcommunity.com")
+                except Exception as e:
+                    _log(f"[WARN] CDP setCookie eroare: {e}")
+
+            _log("[AUTH] Navighez la TakeMySkins login...")
+            driver.get(f"{API_BASE}/login/steam")
+            time.sleep(8)
+            cur_url = driver.current_url
+            _log(f"[AUTH] URL dupa redirect: {cur_url[:80]}")
+
+            openid_clicked = False
+            for openid_wait in range(90):
                 cur_url = driver.current_url
-                _log(f"[AUTH] URL dupa redirect: {cur_url[:80]}")
-
-                for openid_wait in range(60):
-                    cur_url = driver.current_url
-                    if "steamcommunity.com/openid" in cur_url:
+                if "steamcommunity.com/openid" in cur_url:
+                    if not openid_clicked:
+                        try:
+                            page_text = driver.execute_script("return document.body.innerText || ''")
+                            has_signin = "Sign In" in page_text
+                            has_loginform = "loginform" in cur_url or "Sign in" in page_text
+                            _log(f"[AUTH] OpenID: signin_btn={has_signin}, loginform={has_loginform}")
+                        except Exception:
+                            pass
                         try:
                             clicked = driver.execute_script("""
-                                var btns = document.querySelectorAll(
-                                    '#imageLogin, input[type="submit"], input[name="action_sign_in"]');
-                                for (var i = 0; i < btns.length; i++) {
-                                    if (btns[i].offsetParent !== null) {
-                                        btns[i].click();
-                                        return 'clicked: ' + (btns[i].id || btns[i].name || btns[i].type);
-                                    }
+                                var btn = document.querySelector(
+                                    '#imageLogin, input[type="submit"][value="Sign In"], '
+                                    + 'input[name="action_sign_in"]');
+                                if (btn) { btn.click(); return 'clicked: ' + (btn.id || btn.name); }
+                                var forms = document.querySelectorAll('form[action*="openid"]');
+                                for (var i = 0; i < forms.length; i++) {
+                                    var sub = forms[i].querySelector('input[type="submit"]');
+                                    if (sub) { sub.click(); return 'form-submit'; }
                                 }
                                 return null;
                             """)
                             if clicked:
                                 _log(f"[AUTH] OpenID confirm: {clicked}")
-                                time.sleep(5)
+                                openid_clicked = True
+                                time.sleep(8)
                                 continue
-                        except Exception:
-                            pass
-                    elif "takemyskins" in cur_url:
-                        _log(f"[OK] Redirectionat la TakeMySkins: {cur_url[:80]}")
-                        break
-                    if openid_wait > 0 and openid_wait % 15 == 0:
-                        _log(f"[WAIT] OpenID flow... URL: {cur_url[:80]}")
-                    time.sleep(1)
-            else:
-                _log("[WARN] Community cookie lipseste. Folosesc requests pentru OpenID...")
-                # Fallback: use Python requests to complete the OpenID flow
-                import requests as req_lib
-                sess = req_lib.Session()
-                sess.headers.update({"User-Agent": USER_AGENT})
-                # Set Steam cookies from ALL domains we found
-                for domain, val in all_cookies_data.items():
-                    clean_domain = domain.lstrip(".")
-                    sess.cookies.set("steamLoginSecure", val, domain=clean_domain)
-                if steam_cookie_val:
-                    sess.cookies.set("steamLoginSecure", steam_cookie_val,
-                                     domain="store.steampowered.com")
-                    sess.cookies.set("steamLoginSecure", steam_cookie_val,
-                                     domain="steamcommunity.com")
-                if session_id_val:
-                    sess.cookies.set("sessionid", session_id_val,
-                                     domain="store.steampowered.com")
-                    sess.cookies.set("sessionid", session_id_val,
-                                     domain="steamcommunity.com")
-
-                _log("[AUTH] Requests: navighez la TakeMySkins login/steam...")
-                try:
-                    resp = sess.get(f"{API_BASE}/login/steam",
-                                    allow_redirects=True, timeout=30)
-                    final_url = resp.url
-                    _log(f"[AUTH] Requests URL final: {final_url[:80]}")
-                    _log(f"[AUTH] Requests status: {resp.status_code}")
-
-                    tms_cookies = sess.cookies.get_dict(domain="takemyskins.com")
-                    if not tms_cookies:
-                        tms_cookies = sess.cookies.get_dict(domain="api.takemyskins.com")
-                    if not tms_cookies:
-                        tms_cookies = {c.name: c.value for c in sess.cookies
-                                       if "takemyskins" in (c.domain or "")}
-                    _log(f"[AUTH] Requests cookies TMS: {list(tms_cookies.keys())}")
-
-                    if tms_cookies:
-                        cookie_list = []
-                        for c in sess.cookies:
-                            if "takemyskins" in (c.domain or ""):
-                                cookie_list.append({
-                                    "name": c.name, "value": c.value,
-                                    "domain": c.domain, "path": c.path or "/",
-                                    "secure": c.secure,
-                                })
-                        if cookie_list:
-                            self.save_cookies(cookie_list)
-                            refresh_ui_callback({"status": "success",
-                                                 "message": "Sesiune TakeMySkins salvata!"})
-                            _log("[OK] Sesiune TakeMySkins salvata via requests!")
-                            return
-                except Exception as e:
-                    _log(f"[WARN] Requests fallback eroare: {e}")
-
-                _log("[AUTH] Requests fallback nu a reusit, incerc browser direct...")
-                driver.get(f"{API_BASE}/login/steam")
-                time.sleep(10)
-                cur_url = driver.current_url
-                _log(f"[AUTH] Browser URL: {cur_url[:80]}")
+                            else:
+                                _log("[WARN] OpenID: nu am gasit buton Sign In")
+                        except Exception as e:
+                            _log(f"[WARN] OpenID click eroare: {e}")
+                elif "takemyskins" in cur_url:
+                    _log(f"[OK] Redirectionat la TakeMySkins: {cur_url[:80]}")
+                    break
+                if openid_wait > 0 and openid_wait % 20 == 0:
+                    _log(f"[WAIT] OpenID flow... URL: {cur_url[:80]}")
+                time.sleep(1)
 
             cookies = None
             for wait_tick in range(30):
