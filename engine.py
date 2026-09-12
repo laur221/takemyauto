@@ -725,9 +725,12 @@ class RaffleBot:
         """One-time Steam login via QR. Retries if Chrome becomes unresponsive.
         After successful login the takemyskins session cookies are saved."""
         if not self._check_lock.acquire(blocking=False):
-            print("[QR] Browserul este ocupat. Incearca din nou in cateva minute.")
-            refresh_ui_callback({"error": "Browserul este ocupat cu o alta verificare."})
-            return
+            print("[QR] Lock ocupat, astept sa se termine verificarea...")
+            refresh_ui_callback({"status": "waiting", "error": "Astept sa se termine verificarea curenta..."})
+            if not self._check_lock.acquire(timeout=120):
+                print("[QR] Timeout asteptare lock.")
+                refresh_ui_callback({"error": "Verificarea dureaza prea mult. Incearca din nou."})
+                return
 
         try:
             last_err = None
