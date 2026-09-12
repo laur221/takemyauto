@@ -281,6 +281,7 @@ const $ = (id) => document.getElementById(id);
 const DOT = { idle: "idle", run: "run", ok: "ok", err: "err" };
 const RT  = { idle: "Idle", run: "Ruleaza...", ok: "Terminat", err: "Eroare" };
 let lastLogCount = 0;
+let lastQrStatus = "idle";
 
 async function post(url) {
   try {
@@ -332,7 +333,7 @@ async function pollWinnings() {
     const d = await r.json();
     if (d.error) {
       $("stats").innerHTML = '<div class="empty" style="grid-column:1/-1;">' + esc(d.error) + '</div>';
-      $("sess").innerHTML = '<span class="no">● Nu esti logat</span>';
+      $("sess").innerHTML = '<span class="no">● Nu esti logat</span> <span style="color:var(--muted);font-size:11px;">— Apasa "Genereaza QR Steam"</span>';
       $("sess").title = 'Apasa "Genereaza QR Steam" pentru login';
       return;
     }
@@ -388,15 +389,21 @@ async function pollQr() {
     if (d.image) {
       box.classList.add("show");
       $("qrimg").src = "data:image/png;base64," + d.image;
+      $("qrimg").style.display = "block";
       $("qrstat").textContent = d.message || "Scaneaza codul QR cu Steam Mobile";
+      $("qrstat").style.color = "var(--green)";
     } else if (d.status === "idle") {
       box.classList.remove("show");
     } else {
       box.classList.add("show");
-      $("qrimg").removeAttribute("src");
+      $("qrimg").style.display = "none";
       $("qrstat").textContent = d.message || "";
       $("qrstat").style.color = d.ok ? "var(--green)" : "var(--amber)";
+      if (d.status === "done" && d.ok && lastQrStatus !== "done") {
+        pollWinnings();
+      }
     }
+    lastQrStatus = d.status;
   } catch (e) {}
 }
 
@@ -408,7 +415,7 @@ async function pollRuntime() {
   } catch (e) {}
 }
 
-$("btnqr").addEventListener("click", () => { setStatus("Se genereaza QR...", "var(--cyan)"); post("/api/qr"); });
+$("btnqr").addEventListener("click", () => { $("qrmsg").textContent = "Se genereaza QR..."; $("qrmsg").style.color = "var(--cyan)"; post("/api/qr"); });
 $("btncheck").addEventListener("click", () => { post("/api/check"); });
 $("btnrefresh").addEventListener("click", () => { pollWinnings(); setStatus("Statistici actualizate", "var(--green)"); });
 

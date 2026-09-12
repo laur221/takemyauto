@@ -767,17 +767,29 @@ class RaffleBot:
             time.sleep(6)
             
             # Inchide cookie consent banner daca apare
+            # Steam uses DIV elements (not <button>) with class "Focusable"
             try:
-                cookie_buttons = driver.find_elements("xpath", "//button[contains(text(), 'I Agree') or contains(text(), 'Accept') or contains(text(), 'OK')]")
-                for btn in cookie_buttons:
-                    try:
-                        if btn.is_displayed():
-                            btn.click()
-                            print("[QR] Cookie banner inchis")
-                            time.sleep(1)
-                            break
-                    except:
-                        pass
+                driver.execute_script("""
+                    // Steam cookie consent - buttons are DIVs, not <button>
+                    var all = document.querySelectorAll('div.Focusable, button, a.btn_medium, [role="button"]');
+                    for (var i = 0; i < all.length; i++) {
+                        var t = (all[i].innerText || '').trim();
+                        if (t === 'Accept All' || t === 'Got It' || t === 'I Agree' || t === 'OK') {
+                            all[i].click();
+                            return 'clicked: ' + t;
+                        }
+                    }
+                    // Fallback: broader text match
+                    for (var j = 0; j < all.length; j++) {
+                        var t2 = (all[j].innerText || '').trim().toLowerCase();
+                        if (t2.includes('accept all') || t2.includes('accept cookies')) {
+                            all[j].click();
+                            return 'clicked: ' + t2;
+                        }
+                    }
+                """)
+                print("[QR] Cookie consent handled")
+                time.sleep(2)
             except:
                 pass
 
@@ -789,6 +801,29 @@ class RaffleBot:
                 "canvas",
             ]
             for attempt in range(5):
+                # Remove any overlays/popups blocking the QR code
+                try:
+                    driver.execute_script("""
+                        // Try clicking Accept All one more time (Steam cookie popup)
+                        document.querySelectorAll('div.Focusable, button, [role="button"]').forEach(function(el) {
+                            var t = (el.innerText || '').trim();
+                            if (t === 'Accept All' || t === 'Got It') { el.click(); }
+                        });
+                        // Remove fixed/sticky overlays that block the QR
+                        document.querySelectorAll('div').forEach(function(e) {
+                            var s = getComputedStyle(e);
+                            if ((s.position === 'fixed' || s.position === 'sticky') && e.offsetHeight > 50) {
+                                var cls = (e.className || '').toString().toLowerCase();
+                                var id = (e.id || '').toLowerCase();
+                                if (!cls.includes('qr') && !id.includes('qr') && !cls.includes('login') && !cls.includes('newlogindialog')) {
+                                    e.remove();
+                                }
+                            }
+                        });
+                    """)
+                except Exception:
+                    pass
+
                 for sel in qr_selectors:
                     try:
                         elems = driver.find_elements("css selector", sel)
@@ -798,11 +833,9 @@ class RaffleBot:
                                 if size.get("width", 0) >= 120:
                                     shot = el.screenshot_as_png
                                     if shot and len(shot) > 1000:
-                                        # Crop poza la QR doar (elimina spatiul din jurul QR-ului)
                                         from PIL import Image
                                         from io import BytesIO
                                         img = Image.open(BytesIO(shot))
-                                        # Crop la 80% din centru pentru a elimina spatiul
                                         w, h = img.size
                                         margin_x = int(w * 0.1)
                                         margin_y = int(h * 0.1)

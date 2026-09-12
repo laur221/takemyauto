@@ -15,16 +15,11 @@ from webui import INDEX_HTML
 db = DBManager()
 bot = RaffleBot(db)
 
-# Pre-populate cookies in Redis at startup (future expiration: year 2033)
-_startup_cookies = [
-    {"name": "i18n_locale", "value": "en", "domain": ".takemyskins.com", "path": "/", "expires": 2000000000, "httpOnly": False, "secure": True, "sameSite": "Lax"},
-    {"name": "remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d", "value": "eyJpdiI6InlOREhmTTR4bWtTeDhxcjUzazlTNHc9PSIsInZhbHVlIjoiZ2dvQmlHRGNsR1ArbHJjeDZmbDFJQys0ZFFhU2Z3TkxVWkhxTytzSHZjYWdidHZ5L0ZPZW1TbXlwMG5SKzdJb1NUVjJqUCtaR2E4YjF6Vk9lWHNmTFFlenJlV1pjS0ZSQWN1TklmL1JmVlpOVUtXQ1JOUVNaRndKd01XeUc1SG1lNmZVclJ4bkFKWk8zWnR0WU5qOUhnN2M5YUtRclZDeVVwYjYvVk9GVlE0eXJ5T2lQVm8wcGh2OG1VcjBZRHVndytaSEVuYmFNLzlGTmZOQzBVdWFCVXhINEl2V3ZUQzI3RFVOWUJwd2xDaz0i", "domain": ".takemyskins.com", "path": "/", "expires": 2000000000, "httpOnly": True, "secure": True, "sameSite": "Lax"},
-    {"name": "return_url", "value": "eyJpdiI6InczTlB4MkJWdVBmL1NhUWV0M3dERGc9PSIsInZhbHVlIjoieUlPV1dKanQrN3pGVUFsOU1ZeFVESGtjM3lRb211RWZMa3Z5eWtDdnRNNmJ4dWhYWEROcjdkN3pNMkxVbVRLNTRwckRkYjFYeEVVQjAvclc0Wk1ocVd3aFRCV3duZjNkVjJRdFFpeDlqd0k9IiwibWFjIjoiM2ZhNDNmMTI4OGJkYjlkNDdmNTZiNTU5Y2M0ZDgzM2VkODQ0NzhkNjY4ZjZmNzVlNjQ1YTRjNGUzNjNlZmRjNiIsInRhZyI6IiJ9", "domain": ".takemyskins.com", "path": "/", "expires": 2000000000, "httpOnly": True, "secure": True, "sameSite": "Lax"},
-    {"name": "spin_wheel_stat_cookie", "value": "eyJpdiI6IndPcUFnZ3FUYlVYRG5TTnEvWXArcWc9PSIsInZhbHVlIjoiOVEva1dsM1VrRXh3MVgrNFBacUhXQ2ZvNUc0blpTaFFtZmp1YjQrT2FDL1ZmZi85NzF4MGJtdGxldlZNV1N4eUVsY0FVb3ZQRVN5KzdnalB1VG9NQzJBK0o4SVhOQllMZ05Td3JONVVpZGNTZEhLTkVKanQwVEw0bUpxSlpXV3oiLCJtYWMiOiI0MTliMGZlNDAwYmQzYzFmOTdhN2UyMWIwNDU0N2JjMDJiYmI1NGIyMzRiZjRjNWUwNjRlZGUyMDAwY2IwMWViIiwidGFnIjoiIn0%3D", "domain": ".takemyskins.com", "path": "/", "expires": 2000000000, "httpOnly": True, "secure": True, "sameSite": "Lax"},
-    {"name": "takemyskins_session", "value": "PwLK8VsL1ya6WliNRmKT1XF0qWwmhbkyjp4otzCb", "domain": ".takemyskins.com", "path": "/", "expires": 2000000000, "httpOnly": True, "secure": True, "sameSite": "Lax"},
-    {"name": "XSRF-TOKEN", "value": "eyJpdiI6Iko1aU5JTHhYZ0ErSVgvdDVwSUNFWmc9PSIsInZhbHVlIjoiSkNYcUxlM3hhQnBxRDV5elhsdDFZS3cvejM2R25HQlJYOGFBQXJUSTd6ZEZLaG5pWi9xaWRib0dyMUU3QjFFMCthSkVpK09vUXhOMHJmNkRFaWpHYjhBdklKUDFVWEZRNmI2bmx0V2t0WVhhSGxrWmRDamJYd3NLUitlZ3pRZG8iLCJtYWMiOiI5ODgxMTk0ZGE4NjI1YzExOWUyNGIwMDRiNTA1YWU4YWZmNDRhOWMyYTQyNWNkNDBjMDNjNGMxYjU2YmQ3YmNmIiwidGFnIjoiIn0%3D", "domain": ".takemyskins.com", "path": "/", "expires": 2000000000, "httpOnly": False, "secure": True, "sameSite": "Lax"}
-]
-db.save_session({"cookies": _startup_cookies, "saved_at": time.time()})
+# Check existing session at startup (don't overwrite with hardcoded cookies)
+if db.session_exists():
+    print('[STARTUP] Session found in Redis - will use saved cookies')
+else:
+    print('[STARTUP] No session in Redis - QR login required')
 
 app = FastAPI(title="TakeMySkins Automator", version="2.0.0", docs_url="/docs", redoc_url=None)
 
@@ -36,6 +31,7 @@ MAX_LOG = 400
 RUNTIME = {"state": "idle"}  # idle | run | ok | err
 QR_STATE = {"status": "idle", "image": None, "message": "", "ok": False}
 QR_LOCK = threading.Lock()
+QR_DONE_AT = {"time": 0}
 CHECK_RUNNING = {"flag": False}
 QR_RUNNING = {"flag": False}
 
@@ -71,6 +67,7 @@ def qr_callback(data):
     """Called from engine.get_steam_qr. data = PNG bytes or dict."""
     with QR_LOCK:
         if isinstance(data, dict):
+            QR_DONE_AT["time"] = time.time()
             if data.get("status") == "success":
                 QR_STATE.update({"status": "done", "ok": True,
                                  "message": data.get("message", "Sesiune salvata!")})
@@ -82,6 +79,7 @@ def qr_callback(data):
             QR_STATE.update({"status": "show", "image": b64, "ok": True,
                              "message": "Scaneaza codul QR cu Steam Mobile"})
         else:
+            QR_DONE_AT["time"] = time.time()
             QR_STATE.update({"status": "done", "ok": False,
                              "message": "QR indisponibil"})
 
@@ -106,7 +104,9 @@ def run_qr_worker():
         bot.get_steam_qr(qr_callback)
     except Exception as e:
         bot_log(f"Eroare QR: {e}")
-        QR_STATE.update({"status": "done", "ok": False, "message": str(e)})
+        with QR_LOCK:
+            QR_DONE_AT["time"] = time.time()
+            QR_STATE.update({"status": "done", "ok": False, "message": str(e)})
     finally:
         QR_RUNNING["flag"] = False
 
@@ -132,7 +132,8 @@ def api_qr():
     if QR_RUNNING["flag"]:
         return JSONResponse({"error": "QR-ul se genereaza deja."}, status_code=409)
     QR_RUNNING["flag"] = True
-    QR_STATE.update({"status": "show", "image": None, "message": "Se genereaza...", "ok": False})
+    with QR_LOCK:
+        QR_STATE.update({"status": "show", "image": None, "message": "Se genereaza...", "ok": False})
     threading.Thread(target=run_qr_worker, daemon=True).start()
     return {"ok": True}
 
@@ -169,6 +170,8 @@ def api_stats():
 @app.get("/api/qr")
 def api_qr_get():
     with QR_LOCK:
+        if QR_STATE["status"] == "done" and time.time() - QR_DONE_AT["time"] > 15:
+            QR_STATE.update({"status": "idle", "image": None, "message": "", "ok": False})
         return dict(QR_STATE)
 
 
