@@ -721,14 +721,15 @@ class RaffleBot:
 
     # ── steam QR login (browser, one-time) ───────────────────────────────
 
-    def get_steam_qr(self, refresh_ui_callback):
+    def get_steam_qr(self, refresh_ui_callback, log_func=None):
         """One-time Steam login via QR. Retries if Chrome becomes unresponsive.
         After successful login the takemyskins session cookies are saved."""
+        _log = log_func or (lambda m: print(m))
         if not self._check_lock.acquire(blocking=False):
-            print("[QR] Lock ocupat, astept sa se termine verificarea...")
+            _log("[QR] Lock ocupat, astept verificarea curenta...")
             refresh_ui_callback({"status": "waiting", "error": "Astept sa se termine verificarea curenta..."})
             if not self._check_lock.acquire(timeout=120):
-                print("[QR] Timeout asteptare lock.")
+                _log("[ERR] Timeout asteptare lock QR.")
                 refresh_ui_callback({"error": "Verificarea dureaza prea mult. Incearca din nou."})
                 return
 
@@ -736,24 +737,29 @@ class RaffleBot:
             last_err = None
             for attempt in range(1, 4):
                 try:
-                    self._steam_qr_attempt(refresh_ui_callback)
+                    self._steam_qr_attempt(refresh_ui_callback, _log)
                     return
                 except Exception as e:
                     last_err = str(e)
                     unstable = "Timed out receiving message from renderer" in last_err
                     if not unstable or attempt >= 3:
                         break
-                    print(f"[QR] Chrome instabil (incercarea {attempt}). Reincerc peste 5s...")
+                    _log(f"[WARN] Chrome instabil (incercarea {attempt}/3). Reincerc...")
                     time.sleep(5)
+            _log(f"[ERR] QR login esuat: {last_err}")
             refresh_ui_callback({"error": last_err or "Eroare QR necunoscuta"})
         finally:
             self._check_lock.release()
 
-    def _steam_qr_attempt(self, refresh_ui_callback):
+    def _steam_qr_attempt(self, refresh_ui_callback, _log=None):
         """Single attempt of the QR login flow. Raises on failure."""
         from seleniumbase import Driver
 
+        if not _log:
+            _log = lambda m: print(m)
+
         os.makedirs(self.session_dir, exist_ok=True)
+        _log("[AUTH] Pornesc browser pentru Steam QR login...")
         driver = Driver(
             uc=True,
             user_data_dir=self.session_dir,
@@ -766,14 +772,11 @@ class RaffleBot:
         try:
             driver.set_page_load_timeout(30)
             driver.get("https://store.steampowered.com/login/")
-            print("[QR] Pagina Steam incarcata, astept QR...")
+            _log("[AUTH] Pagina Steam incarcata, astept QR...")
             time.sleep(6)
-            
-            # Inchide cookie consent banner daca apare
-            # Steam uses DIV elements (not <button>) with class "Focusable"
+
             try:
-                driver.execute_script("""
-                    // Steam cookie consent - buttons are DIVs, not <button>
+                result = driver.execute_script("""
                     var all = document.querySelectorAll('div.Focusable, button, a.btn_medium, [role="button"]');
                     for (var i = 0; i < all.length; i++) {
                         var t = (all[i].innerText || '').trim();
@@ -782,7 +785,6 @@ class RaffleBot:
                             return 'clicked: ' + t;
                         }
                     }
-                    // Fallback: broader text match
                     for (var j = 0; j < all.length; j++) {
                         var t2 = (all[j].innerText || '').trim().toLowerCase();
                         if (t2.includes('accept all') || t2.includes('accept cookies')) {
@@ -790,15 +792,16 @@ class RaffleBot:
                             return 'clicked: ' + t2;
                         }
                     }
+                    return 'no banner';
                 """)
-                print("[QR] Cookie consent handled")
+                if result and result != 'no banner':
+                    _log(f"[AUTH] Cookie consent: {result}")
                 time.sleep(2)
-            except:
+            except Exception:
                 pass
 
             qr_bytes = None
             for attempt in range(5):
-                # Remove any overlays/popups blocking the QR code
                 try:
                     driver.execute_script("""
                         document.querySelectorAll('div.Focusable, button, [role="button"]').forEach(function(el) {
@@ -819,7 +822,6 @@ class RaffleBot:
                 except Exception:
                     pass
 
-                # Extract QR via JS canvas (crisp nearest-neighbor upscale)
                 try:
                     qr_b64 = driver.execute_script("""
                         var img = document.querySelector('img[src*="blob:"]');
@@ -841,12 +843,11 @@ class RaffleBot:
                     if qr_b64 and len(qr_b64) > 100:
                         import base64 as b64mod
                         qr_bytes = b64mod.b64decode(qr_b64)
-                        print(f"[QR] Extracted via JS canvas (attempt {attempt+1})")
+                        _log(f"[AUTH] QR extras via JS canvas (incercarea {attempt+1})")
                         break
                 except Exception:
                     pass
 
-                # Fallback: element screenshot
                 if not qr_bytes:
                     for sel in ["img[src*='blob:']", "div[style*='--qr-bright-color']", "canvas"]:
                         try:
@@ -858,7 +859,7 @@ class RaffleBot:
                                         shot = el.screenshot_as_png
                                         if shot and len(shot) > 500:
                                             qr_bytes = shot
-                                            print(f"[QR] Fallback screenshot (attempt {attempt+1})")
+                                            _log(f"[AUTH] QR extras via screenshot (incercarea {attempt+1})")
                                             break
                             if qr_bytes:
                                 break
@@ -872,46 +873,83 @@ class RaffleBot:
                 raise RuntimeError("Steam nu a afisat QR-ul (pagina s-ar putea sa ceara user/pass).")
 
             refresh_ui_callback(qr_bytes)
-            print("[QR] QR trimis pe UI. Astept scanarea...")
+            _log("[AUTH] QR trimis pe UI. Scaneaza cu Steam Mobile!")
 
             scanned = False
             scan_timeout = int(os.getenv("STEAM_QR_TIMEOUT", "180"))
-            for _ in range(scan_timeout):
+            login_url = driver.current_url
+            _log(f"[AUTH] Astept scanarea ({scan_timeout}s timeout)...")
+            for tick in range(scan_timeout):
                 try:
-                    cookies = driver.get_cookies()
-                    names = {c.get("name") for c in cookies}
-                    if "steamLoginSecure" in names:
+                    cur_url = driver.current_url
+                    if cur_url != login_url and "/login" not in cur_url:
+                        _log(f"[AUTH] Pagina s-a schimbat: {cur_url[:80]}")
                         scanned = True
                         break
-                except Exception:
-                    pass
+
+                    cookies = driver.get_cookies()
+                    names = {c.get("name") for c in cookies}
+                    steam_auth_cookies = {"steamLoginSecure", "steamRememberLogin",
+                                          "steamMachineAuth"}
+                    found = names & steam_auth_cookies
+                    if found:
+                        _log(f"[OK] Cookie Steam detectat: {found}")
+                        scanned = True
+                        break
+
+                    page_changed = driver.execute_script("""
+                        var el = document.querySelector('[class*="avatarHolder"], [class*="profileLink"], [class*="UserAvatar"]');
+                        if (el) return 'avatar_found';
+                        var qr = document.querySelector('img[src*="blob:"]');
+                        if (!qr) return 'qr_gone';
+                        return null;
+                    """)
+                    if page_changed:
+                        _log(f"[AUTH] Pagina s-a schimbat dupa scan: {page_changed}")
+                        scanned = True
+                        break
+
+                    if tick > 0 and tick % 30 == 0:
+                        _log(f"[WAIT] Inca astept scanarea... ({tick}s / {scan_timeout}s)")
+                except Exception as e:
+                    if tick % 30 == 0:
+                        _log(f"[WARN] Eroare la verificare scan: {e}")
                 time.sleep(1)
 
             if not scanned:
+                _log("[ERR] Timeout - QR-ul nu a fost scanat in timp util.")
                 raise RuntimeError("Timpul a expirat. QR-ul Steam nu a fost scanat.")
 
-            print("[QR] Steam autentificat! Completez login-ul la TakeMySkins...")
+            time.sleep(3)
+            _log("[AUTH] Steam autentificat! Navighez la TakeMySkins login...")
             driver.get(f"{API_BASE}/login/steam")
+            _log(f"[AUTH] Navigat la {API_BASE}/login/steam")
 
             cookies = None
-            for _ in range(30):
+            for wait_tick in range(30):
                 try:
                     current = driver.get_cookies()
                     names = {c.get("name") for c in current}
                     if "takemyskins_session" in names:
                         cookies = current
+                        _log("[OK] Cookie TakeMySkins detectat!")
                         break
                 except Exception:
                     pass
+                if wait_tick > 0 and wait_tick % 10 == 0:
+                    cur = driver.current_url
+                    _log(f"[WAIT] Astept sesiune TakeMySkins... URL: {cur[:80]}")
                 time.sleep(1)
 
             if not cookies:
+                cur = driver.current_url
+                _log(f"[ERR] TakeMySkins nu a setat sesiunea. URL final: {cur[:100]}")
                 raise RuntimeError("Login Steam OK, dar TakeMySkins nu a setat sesiunea. "
                                    "Incearca din nou sau logheaza-te manual in browser.")
 
             self.save_cookies(cookies)
             refresh_ui_callback({"status": "success", "message": "Sesiune TakeMySkins salvata!"})
-            print("[QR] [OK] Sesiune TakeMySkins salvata!")
+            _log("[OK] Sesiune TakeMySkins salvata cu succes!")
         finally:
             if driver:
                 try:

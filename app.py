@@ -101,7 +101,7 @@ def run_check_worker():
 def run_qr_worker():
     try:
         bot_log("Se genereaza QR Steam...")
-        bot.get_steam_qr(qr_callback)
+        bot.get_steam_qr(qr_callback, log_func=bot_log)
     except Exception as e:
         bot_log(f"Eroare QR: {e}")
         with QR_LOCK:
