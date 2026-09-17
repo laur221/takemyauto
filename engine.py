@@ -31,6 +31,29 @@ class RaffleBot:
     def request_qr_cancel(self):
         self._qr_cancel_event.set()
 
+    @staticmethod
+    def _wd_call(fn, timeout=15):
+        """Run a WebDriver command with a hard timeout. Native Selenium
+        commands (e.g. .click(), .current_url) have no built-in timeout and
+        can hang forever if Chrome becomes unresponsive - unlike page loads,
+        which respect set_page_load_timeout."""
+        box = {}
+
+        def target():
+            try:
+                box["value"] = fn()
+            except Exception as e:
+                box["error"] = e
+
+        t = threading.Thread(target=target, daemon=True)
+        t.start()
+        t.join(timeout)
+        if t.is_alive():
+            raise RuntimeError(f"Comanda browser nu a raspuns in {timeout}s (posibil inghetat)")
+        if "error" in box:
+            raise box["error"]
+        return box.get("value")
+
     # ── helpers ──────────────────────────────────────────────────────────
 
     def _session_file(self):
@@ -849,7 +872,8 @@ class RaffleBot:
                     return
                 except Exception as e:
                     last_err = str(e)
-                    unstable = "Timed out receiving message from renderer" in last_err
+                    unstable = ("Timed out receiving message from renderer" in last_err
+                                or "nu a raspuns in" in last_err)
                     if not unstable or attempt >= 3:
                         break
                     _log(f"[WARN] Chrome instabil (incercarea {attempt}/3). Reincerc...")
@@ -1129,11 +1153,12 @@ class RaffleBot:
             for openid_wait in range(90):
                 if self._qr_cancel_event.is_set():
                     raise RuntimeError("QR anulat - se genereaza unul nou.")
-                cur_url = driver.current_url
+                cur_url = self._wd_call(lambda: driver.current_url)
                 if "steamcommunity.com/openid" in cur_url:
                     if not openid_clicked:
                         try:
-                            page_text = driver.execute_script("return document.body.innerText || ''")
+                            page_text = self._wd_call(
+                                lambda: driver.execute_script("return document.body.innerText || ''"))
                             has_signin = "Sign In" in page_text
                             has_loginform = "loginform" in cur_url or "Sign in" in page_text
                             _log(f"[AUTH] OpenID: signin_btn={has_signin}, loginform={has_loginform}")
@@ -1145,26 +1170,29 @@ class RaffleBot:
                             # (execute_script) reported success here but the
                             # form never actually submitted - Steam's page
                             # likely ignores untrusted synthetic clicks.
-                            clicked = None
-                            for sel in ('#imageLogin',
-                                        'input[type="submit"][value="Sign In"]',
-                                        'input[name="action_sign_in"]'):
-                                try:
-                                    el = driver.find_element("css selector", sel)
-                                    if el.is_displayed():
-                                        el.click()
-                                        clicked = f"clicked: {sel}"
-                                        break
-                                except Exception:
-                                    continue
-                            if not clicked:
+                            # Every WebDriver call here is timeout-guarded:
+                            # a frozen renderer can hang a native command
+                            # forever otherwise, wedging _check_lock for good.
+                            def _try_click():
+                                for sel in ('#imageLogin',
+                                            'input[type="submit"][value="Sign In"]',
+                                            'input[name="action_sign_in"]'):
+                                    try:
+                                        el = driver.find_element("css selector", sel)
+                                        if el.is_displayed():
+                                            el.click()
+                                            return f"clicked: {sel}"
+                                    except Exception:
+                                        continue
                                 try:
                                     form = driver.find_element("css selector", 'form[action*="openid"]')
                                     submit_btn = form.find_element("css selector", 'input[type="submit"]')
                                     submit_btn.click()
-                                    clicked = "form-submit"
+                                    return "form-submit"
                                 except Exception:
-                                    pass
+                                    return None
+
+                            clicked = self._wd_call(_try_click)
                             if clicked:
                                 _log(f"[AUTH] OpenID confirm: {clicked}")
                                 openid_clicked = True
@@ -1184,7 +1212,7 @@ class RaffleBot:
             cookies = None
             for wait_tick in range(30):
                 try:
-                    current = driver.get_cookies()
+                    current = self._wd_call(lambda: driver.get_cookies())
                     names = {c.get("name") for c in current}
                     if "takemyskins_session" in names:
                         cookies = current
@@ -1193,7 +1221,7 @@ class RaffleBot:
                 except Exception:
                     pass
                 if wait_tick > 0 and wait_tick % 10 == 0:
-                    cur = driver.current_url
+                    cur = self._wd_call(lambda: driver.current_url)
                     _log(f"[WAIT] Astept sesiune TakeMySkins... URL: {cur[:80]}")
                 time.sleep(1)
 
@@ -1223,6 +1251,9 @@ class RaffleBot:
         finally:
             if driver:
                 try:
-                    driver.quit()
+                    # quit() can hang just as badly as any other WebDriver
+                    # command if Chrome is frozen - run it on a daemon thread
+                    # so a stuck browser can't wedge this attempt forever.
+                    self._wd_call(driver.quit, timeout=10)
                 except Exception:
                     pass
