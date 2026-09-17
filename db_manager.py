@@ -232,6 +232,25 @@ class DBManager:
             print(f"[DB] Session get error: {e}")
         return None
 
+    def get_legacy_session(self):
+        """One-time read of the pre-multi-account session key."""
+        if not self.redis_available:
+            return None
+        try:
+            data = self.redis_client.get("session:takemyskins")
+            if data:
+                return json.loads(data)
+        except Exception as e:
+            print(f"[DB] Legacy session read error: {e}")
+        return None
+
+    def delete_legacy_session(self):
+        if self.redis_available:
+            try:
+                self.redis_client.delete("session:takemyskins")
+            except Exception:
+                pass
+
     def get_active_steam_id(self):
         if not self.redis_available:
             return None

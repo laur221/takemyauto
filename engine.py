@@ -32,24 +32,52 @@ class RaffleBot:
     def _session_file(self):
         return os.path.join(self.session_dir, "tms_cookies.json")
 
-    @staticmethod
-    def _extract_steam_id(cookie_list):
-        """steamLoginSecure value is "<steamid64>||<token>" (Steam's own account
-        identifier) - used as the DB key so re-logging into the same account
-        overwrites it instead of creating a duplicate."""
+    def _identity_from_cookies(self, cookie_list, log=None):
+        """Fetch the SteamID64 + nickname for a given cookie jar via the
+        takemyskins profile API. Cookies saved after login are
+        takemyskins.com-only (Selenium only captures the current domain's
+        jar), so there's no Steam cookie to read the SteamID from directly -
+        but /profile/user returns it as user.steam_id."""
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json, text/plain, */*",
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": "https://takemyskins.com",
+            "Referer": "https://takemyskins.com/",
+        })
         for c in cookie_list or []:
-            if c.get("name") == "steamLoginSecure":
-                val = c.get("value") or ""
-                for sep in ("%7C%7C", "||"):
-                    if sep in val:
-                        return val.split(sep)[0]
-        return None
+            try:
+                if not c.get("name") or c.get("value") is None:
+                    continue
+                session.cookies.set(
+                    c["name"], c["value"],
+                    domain=c.get("domain") or "takemyskins.com",
+                    path=c.get("path") or "/",
+                )
+            except Exception:
+                continue
+        try:
+            r = session.get(f"{API_BASE}/root", timeout=20)
+            token = r.json().get("token")
+            if token:
+                session.headers["X-CSRF-Token"] = token
+            r2 = session.get(f"{API_BASE}/profile/user", timeout=20)
+            user = r2.json().get("user")
+            if user and user.get("steam_id"):
+                return str(user["steam_id"]), user.get("nickname")
+        except Exception as e:
+            if log:
+                log(f"[AUTH] Nu am putut identifica contul: {e}")
+        return None, None
 
-    def save_cookies(self, cookie_list, log=None, nickname=None):
+    def save_cookies(self, cookie_list, log=None, steam_id=None, nickname=None):
         self._http = None
         self._csrf_token = None
         os.makedirs(self.session_dir, exist_ok=True)
-        steam_id = self._extract_steam_id(cookie_list) or "default"
+        if not steam_id:
+            steam_id, nickname = self._identity_from_cookies(cookie_list, log)
+        steam_id = steam_id or "default"
         payload = {
             "cookies": cookie_list,
             "saved_at": time.time(),
@@ -58,7 +86,7 @@ class RaffleBot:
         with open(self._session_file(), "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
         if log:
-            log(f"[SESSION] Cookies salvate local (cont {steam_id})")
+            log(f"[SESSION] Cookies salvate local (cont {nickname or steam_id})")
         self.db.save_session(steam_id, payload, nickname=nickname)
         return steam_id
 
@@ -75,6 +103,17 @@ class RaffleBot:
                         data = local
             except Exception:
                 data = None
+        if not data:
+            # One-time migration from the old single-account key.
+            legacy = self.db.get_legacy_session()
+            if legacy:
+                steam_id, nickname = self._identity_from_cookies(legacy.get("cookies"), log)
+                steam_id = steam_id or "default"
+                self.db.save_session(steam_id, legacy, nickname=nickname)
+                self.db.delete_legacy_session()
+                data = legacy
+                if log:
+                    log(f"[SESSION] Migrat contul existent la noul format ({nickname or steam_id})")
         if not data:
             if log:
                 log("[SESSION] Nu exista cookies salvate")
@@ -1077,17 +1116,9 @@ class RaffleBot:
                 raise RuntimeError("Login Steam OK, dar TakeMySkins nu a setat sesiunea. "
                                    "Incearca din nou sau logheaza-te manual in browser.")
 
-            steam_id = self.save_cookies(cookies)
-            nickname = None
-            try:
-                user = self.get_current_user(log=_log)
-                if user:
-                    nickname = user.get("nickname")
-                    if nickname:
-                        self.db.save_session(steam_id, self.db.get_session(steam_id), nickname=nickname)
-            except Exception:
-                pass
-            label = nickname or steam_id
+            steam_id, nickname = self._identity_from_cookies(cookies, _log)
+            self.save_cookies(cookies, steam_id=steam_id, nickname=nickname)
+            label = nickname or steam_id or "cont necunoscut"
             refresh_ui_callback({"status": "success", "message": f"Sesiune salvata pentru {label}!"})
             _log(f"[OK] Sesiune TakeMySkins salvata cu succes ({label})!")
         finally:

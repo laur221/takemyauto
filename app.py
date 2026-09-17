@@ -216,6 +216,15 @@ def api_accounts_switch(req: dict):
     return {"ok": True}
 
 
+@app.get("/api/ip")
+def api_ip():
+    try:
+        r = requests.get("https://api.ipify.org?format=json", timeout=5)
+        return {"ip": r.json().get("ip", "-")}
+    except Exception:
+        return {"ip": "-"}
+
+
 @app.get("/api/db")
 def api_db():
     return {

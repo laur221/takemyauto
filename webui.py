@@ -274,6 +274,7 @@ INDEX_HTML = """<!DOCTYPE html>
     <span class="chip">API connected</span>
     <span class="chip">Steam session</span>
     <span style="margin-left:4px;">v2.0 · Render Free</span>
+    <span class="chip" id="ipchip">IP: ...</span>
   </footer>
 </div>
 
@@ -447,6 +448,15 @@ async function pollRuntime() {
 $("btnqr").addEventListener("click", () => { $("qrmsg").textContent = "Se genereaza QR..."; $("qrmsg").style.color = "var(--cyan)"; post("/api/qr"); });
 $("btncheck").addEventListener("click", () => { post("/api/check"); });
 $("btnrefresh").addEventListener("click", () => { pollWinnings(); setStatus("Statistici actualizate", "var(--green)"); });
+
+async function loadIp() {
+  try {
+    const r = await fetch("/api/ip");
+    const d = await r.json();
+    $("ipchip").textContent = "IP: " + (d.ip || "-");
+  } catch (e) {}
+}
+loadIp();
 
 setInterval(pollLogs, 1000);
 setInterval(pollWinnings, 30000);
