@@ -301,10 +301,20 @@ class RaffleBot:
                         log(f"[PW] Cookies incarcate din Redis ({len(cookies)} cookies)")
                 
                 page = context.new_page()
-                page.goto("https://takemyskins.com/", wait_until="networkidle", timeout=30000)
-                
-                # Așteaptă ca raflele să se încarce (Vue.js e lent)
-                page.wait_for_timeout(5000)
+                page.goto("https://takemyskins.com/", wait_until="domcontentloaded", timeout=30000)
+
+                # Așteaptă ca raflele să se încarce (Vue.js e lent) -
+                # asteptare pe continut real, nu sleep fix (pe free plan pagina
+                # poate avea nevoie de mai mult de 5s).
+                try:
+                    page.wait_for_function(
+                        "() => document.querySelectorAll('a[href*=\"/giveaway\"]').length > 0",
+                        timeout=25000,
+                    )
+                except Exception:
+                    if log:
+                        log("[PW] Timeout asteptare lista rafle (pagina goa / Vue nu a randat)")
+                page.wait_for_timeout(2000)
                 
                 # Extrage raflele
                 giveaways = page.evaluate("""() => {
@@ -802,6 +812,14 @@ class RaffleBot:
             if not root:
                 log("[API] Eroare la init /root. Verifica reteaua.")
                 return "Eroare"
+
+            # Pre-check: sesiunea contului pin-uit mai e valida?
+            # Daca nu, oprim aici cu mesaj clar in loc de "0 rafle" / "NOT JOINED".
+            user = self.get_current_user(log)
+            if not user:
+                log("[AUTH] Sesiune expirata sau invalida pentru acest cont. "
+                    "Reexporta cookie-urile din browser si reimporta-le.")
+                return "Neautentificat"
 
             log("[HTML] Se listeaza raflele active de pe site...")
             data = self.list_active_giveaways_from_html(log)
