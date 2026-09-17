@@ -234,6 +234,52 @@ class RaffleBot:
         session = self._ensure_session(log)
         return self._set_csrf(session, log)
 
+    @staticmethod
+    def _pw_cookies(cookie_list):
+        """Convert stored cookies (Selenium / Cookie-Editor export shape) to
+        the strict shape Playwright's add_cookies() accepts.
+
+        Cookie-Editor exports sameSite as "no_restriction"/"unspecified"/etc.,
+        which Playwright rejects (it only accepts Strict|Lax|None). Unknown
+        values are dropped so the browser applies its default instead.
+        """
+        out = []
+        for c in cookie_list or []:
+            try:
+                name = c.get("name")
+                value = c.get("value")
+                if not name or value is None:
+                    continue
+                pw = {
+                    "name": name,
+                    "value": value,
+                    "domain": (c.get("domain") or "takemyskins.com").lstrip(".").split(":")[0],
+                    "path": c.get("path") or "/",
+                }
+                exp = c.get("expires") or c.get("expiry") or c.get("expirationDate")
+                if exp:
+                    try:
+                        pw["expires"] = float(exp)
+                    except (TypeError, ValueError):
+                        pass
+                if c.get("httpOnly") is not None:
+                    pw["httpOnly"] = bool(c.get("httpOnly"))
+                secure = bool(c.get("secure"))
+                same = (c.get("sameSite") or "").strip().lower()
+                if same == "strict":
+                    pw["sameSite"] = "Strict"
+                elif same == "lax":
+                    pw["sameSite"] = "Lax"
+                elif same in ("none", "no_restriction"):
+                    pw["sameSite"] = "None"
+                    secure = True  # SameSite=None requires Secure
+                # else: omit sameSite entirely (browser default)
+                pw["secure"] = secure
+                out.append(pw)
+            except Exception:
+                continue
+        return out
+
     def list_active_giveaways_from_html(self, log=None):
         """
         Folosește Playwright headless browser pentru a scrape rafle și a intra în ele.
@@ -250,7 +296,7 @@ class RaffleBot:
                 # Încarcă cookies din Redis (Upstash)
                 cookies = self.load_cookies(log)
                 if cookies:
-                    context.add_cookies(cookies)
+                    context.add_cookies(self._pw_cookies(cookies))
                     if log:
                         log(f"[PW] Cookies incarcate din Redis ({len(cookies)} cookies)")
                 
@@ -325,7 +371,7 @@ class RaffleBot:
                 # Încarcă cookies din Redis (Upstash)
                 cookies = self.load_cookies(log)
                 if cookies:
-                    context.add_cookies(cookies)
+                    context.add_cookies(self._pw_cookies(cookies))
                     if log:
                         log(f"[PW] Cookies incarcate din Redis pentru join ({len(cookies)} cookies)")
                 
@@ -417,7 +463,7 @@ class RaffleBot:
                 
                 cookies = self.load_cookies(log)
                 if cookies:
-                    context.add_cookies(cookies)
+                    context.add_cookies(self._pw_cookies(cookies))
                     if log:
                         log(f"[DEBUG] Loaded {len(cookies)} cookies into Playwright context")
                 
