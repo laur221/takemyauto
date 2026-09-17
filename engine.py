@@ -1,4 +1,4 @@
-﻿import json
+import json
 import os
 import threading
 import time
@@ -280,74 +280,6 @@ class RaffleBot:
                 continue
         return out
 
-    def list_active_giveaways_from_html(self, log=None):
-        """
-        Folosește Playwright headless browser pentru a scrape rafle și a intra în ele.
-        API-ul TakeMySkins e blocat pentru bots, deci folosim browser real.
-        """
-        try:
-            from playwright.sync_api import sync_playwright
-            import json
-            
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                context = browser.new_context()
-                
-                # Încarcă cookies din Redis (Upstash)
-                cookies = self.load_cookies(log)
-                if cookies:
-                    context.add_cookies(self._pw_cookies(cookies))
-                    if log:
-                        log(f"[PW] Cookies incarcate din Redis ({len(cookies)} cookies)")
-                
-                page = context.new_page()
-                page.goto("https://takemyskins.com/", wait_until="domcontentloaded", timeout=30000)
-
-                # Așteaptă ca raflele să se încarce (Vue.js e lent) -
-                # asteptare pe continut real, nu sleep fix (pe free plan pagina
-                # poate avea nevoie de mai mult de 5s).
-                try:
-                    page.wait_for_function(
-                        "() => document.querySelectorAll('a[href*=\"/giveaway\"]').length > 0",
-                        timeout=25000,
-                    )
-                except Exception:
-                    if log:
-                        log("[PW] Timeout asteptare lista rafle (pagina goa / Vue nu a randat)")
-                page.wait_for_timeout(2000)
-                
-                # Extrage raflele
-                giveaways = page.evaluate("""() => {
-                    const links = Array.from(document.querySelectorAll('a[href*="/giveaway"]'));
-                    return links.map(l => ({
-                        url: l.href,
-                        segment: l.href.split('/').pop(),
-                        isJoined: l.textContent.includes("You're in")
-                    }));
-                }""")
-                
-                if log:
-                    log(f"[PW] Gasite {len(giveaways)} rafle pe site")
-                
-                # Convertește în format compatibil
-                result_giveaways = []
-                for g in giveaways:
-                    result_giveaways.append({
-                        "id": g['segment'],
-                        "custom_url_segment": g['segment'],
-                        "name": f"Raffle {g['segment'][:8]}",
-                        "joined": g['isJoined'],
-                        "is_joined": g['isJoined']
-                    })
-                
-                browser.close()
-                return {"giveaways": result_giveaways, "total": {"active_total": len(result_giveaways)}}
-                
-        except Exception as e:
-            if log:
-                log(f"[PW] Eroare Playwright: {e}")
-            return {"giveaways": [], "total": {"active_total": 0}}
-
     def list_active_giveaways(self, log=None, page=1, per_page=50):
         session = self._ensure_session(log)
         params = {"page": page, "per_page": per_page}
@@ -365,310 +297,18 @@ class RaffleBot:
         r.raise_for_status()
         return r.json()
 
-    def join_giveaway(self, ref, log=None):
-        """
-        Intră în raflă folosind Playwright (API-ul e blocat).
-        Completează automat condițiile și apasă Join.
-        """
-        try:
-            from playwright.sync_api import sync_playwright
-            import json
-            
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                context = browser.new_context()
-                
-                # Încarcă cookies din Redis (Upstash)
-                cookies = self.load_cookies(log)
-                if cookies:
-                    context.add_cookies(self._pw_cookies(cookies))
-                    if log:
-                        log(f"[PW] Cookies incarcate din Redis pentru join ({len(cookies)} cookies)")
-                
-                page = context.new_page()
-                page.goto(f"https://takemyskins.com/giveaways/{ref}", wait_until="networkidle", timeout=30000)
-                
-                # Așteptă ca Vue.js să se încarce
-                page.wait_for_timeout(5000)
-                
-                # Verifică dacă deja înscris
-                is_joined = page.evaluate("""() => {
-                    return document.body.innerText.includes("You're in");
-                }""")
-                
-                if is_joined:
-                    browser.close()
-                    return {"status": "success", "message": "Already joined"}
-                
-                # Completează condițiile (click pe check pentru fiecare task)
-                try:
-                    check_buttons = page.locator('button:has-text("Check"), button:has-text("Verify")').all()
-                    for btn in check_buttons:
-                        try:
-                            if btn.is_visible(timeout=1000):
-                                btn.click()
-                                page.wait_for_timeout(500)
-                        except:
-                            pass
-                    page.wait_for_timeout(2000)
-                except:
-                    pass
-                
-                # Click pe butonul de join
-                try:
-                    join_btn = page.locator('button:has-text("Join"), button:has-text("Enter"), button:has-text("Participate")').first
-                    if join_btn.is_visible(timeout=5000):
-                        join_btn.click()
-                        page.wait_for_timeout(2000)
-                        browser.close()
-                        return {"status": "success"}
-                    else:
-                        browser.close()
-                        return {"status": "error", "error_message": "Join button not found"}
-                except Exception as e:
-                    browser.close()
-                    return {"status": "error", "error_message": str(e)}
-                    
-        except Exception as e:
-            # Fallback la API vechi dacă Playwright eșuează
-            if log:
-                log(f"[PW] Eroare Playwright join, fallback la API: {e}")
-            session = self._ensure_session(log)
-            r = session.post(
-                f"{API_BASE}/giveaway/join_giveaway/{ref}",
-                json={},
-                timeout=20,
-            )
-            try:
-                return r.json()
-            except Exception as e:
-                try:
-                    error_text = r.text[:200]
-                except Exception:
-                    error_text = f"Failed to parse response (status {r.status_code})"
-                return {"status": "error", "error_message": error_text}
+    # NOTE: Playwright-based joining was removed - the site renders the
+    # giveaway page logged-out for automated browsers, but the plain API
+    # flow (show -> GET checks -> POST join by numeric id) works reliably.
 
-    def check_and_join_giveaway_pw(self, segment, log=None):
-        """
-        Join raffle - robust flow:
-        1. Navigate to giveaway page
-        2. Wait for Vue to load precondition items
-        3. Check if already joined ("You're in!")
-        4. Find non-completed condition items
-        5. For each pending item, click its action button ("Share"/"Link") and close popup
-        6. Verify "You're in!" appears
-        """
-        try:
-            from playwright.sync_api import sync_playwright
-            
-            if log:
-                log(f"[DEBUG] Starting join flow for {segment}")
-            
-            with sync_playwright() as p:
-                browser = p.chromium.launch(
-                    headless=True,
-                    args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-                )
-                context = browser.new_context()
-                
-                cookies = self.load_cookies(log)
-                if cookies:
-                    context.add_cookies(self._pw_cookies(cookies))
-                    if log:
-                        log(f"[DEBUG] Loaded {len(cookies)} cookies into Playwright context")
-                
-                page = context.new_page()
-                if log:
-                    log(f"[DEBUG] Navigating to {segment}")
-                
-                page.goto(f"https://takemyskins.com/giveaways/{segment}", wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(3000)
-                
-                curr_url = page.url
-                curr_title = page.title()
-                body_sample = page.evaluate("""() => (document.body ? document.body.innerText : '').slice(0, 300)""")
-                
-                if log:
-                    log(f"[DEBUG] Page state -> URL: {curr_url} | Title: {curr_title} | Text: {body_sample[:100]}")
-                
-                # Wait for Vue.js app to mount preconditions section
-                if log:
-                    log(f"[DEBUG] Waiting for Vue preconditions section...")
-                
-                try:
-                    page.wait_for_function(
-                        "() => document.body && (document.body.innerText.includes('Share the raffle') || document.body.innerText.includes('Link your Discord') || document.body.innerText.includes(\"You're in\") || document.body.innerText.includes('preconditions'))",
-                        timeout=15000
-                    )
-                    if log:
-                        log(f"[DEBUG] Preconditions section loaded successfully")
-                except Exception as e:
-                    body_fail = page.evaluate("""() => (document.body ? document.body.innerText : '').replace(/\\n+/g, ' ').slice(0, 300)""")
-                    if log:
-                        log(f"[DEBUG] Timeout waiting for preconditions. Current text: {body_fail}")
-                
-                page.wait_for_timeout(2000)
-                
-                # Check if already joined
-                is_joined = page.evaluate("""() => document.body.innerText.includes("You're in")""")
-                if is_joined:
-                    if log:
-                        log(f"[DEBUG] Already joined: {segment}")
-                        log(f"[PW] Already joined: {segment}")
-                    browser.close()
-                    return {"status": "success", "already_joined": True}
-                
-                # Loop through pending condition cards (up to 10 attempts for Share + Check pairs)
-                for attempt in range(10):
-                    # Find first pending condition card
-                    pending_info = page.evaluate("""() => {
-                        const cards = Array.from(document.querySelectorAll('div')).filter(d => {
-                            const hasAction = d.querySelector('div[class*="action"], p[class*="action"], [class*="action"]');
-                            const t = d.innerText || '';
-                            return hasAction && t.length < 150 && (t.includes('Share the raffle') || t.includes('Link your Discord') || t.includes('Link and confirm'));
-                        });
-                        
-                        const pending = cards.filter(c => !c.innerText.includes('DONE'));
-                        if (pending.length === 0) {
-                            return { allDone: true, count: cards.length };
-                        }
-                        
-                        const first = pending[0];
-                        const actionEl = first.querySelector('div[class*="action"], p[class*="action"], [class*="action"]');
-                        const actionText = actionEl ? actionEl.innerText.trim() : '';
-                        return {
-                            allDone: false,
-                            title: first.innerText.replace(/\\n+/g, ' ').slice(0, 60),
-                            actionText: actionText,
-                            pendingCount: pending.length,
-                            totalCount: cards.length
-                        };
-                    }""")
-                    
-                    if log:
-                        log(f"[DEBUG] Status attempt {attempt+1}: {pending_info}")
-                    
-                    if pending_info.get('allDone'):
-                        if log:
-                            log(f"[DEBUG] All condition cards are DONE!")
-                        break
-                    
-                    cond_title = pending_info.get('title', 'Condition')
-                    action_text = pending_info.get('actionText', '')
-                    
-                    if log:
-                        log(f"[DEBUG] Processing pending condition: {cond_title}")
-                        log(f"[PW] Processing {cond_title[:30]}...")
-                    
-                    # Click the action button on the first non-DONE card
-                    try:
-                        is_check = "check" in action_text.lower()
-                        if not is_check:
-                            try:
-                                with context.expect_page(timeout=3000) as new_page_info:
-                                    page.evaluate("""() => {
-                                        const cards = Array.from(document.querySelectorAll('div')).filter(d => {
-                                            const hasAction = d.querySelector('div[class*="action"], p[class*="action"], [class*="action"]');
-                                            const t = d.innerText || '';
-                                            return hasAction && t.length < 150 && (t.includes('Share the raffle') || t.includes('Link your Discord') || t.includes('Link and confirm'));
-                                        });
-                                        const firstPending = cards.find(c => !c.innerText.includes('DONE'));
-                                        if (firstPending) {
-                                            const btn = firstPending.querySelector('div[class*="action"], p[class*="action"], [class*="action"]') || firstPending;
-                                            btn.click();
-                                        }
-                                    }""")
-                                popup_page = new_page_info.value
-                                if popup_page:
-                                    popup_url = getattr(popup_page, 'url', '')
-                                    if log:
-                                        log(f"[DEBUG] Opened popup: {popup_url[:50]}")
-                                    page.wait_for_timeout(1000)
-                                    popup_page.close()
-                                    if log:
-                                        log(f"[DEBUG] Closed popup tab")
-                            except Exception:
-                                if log:
-                                    log(f"[DEBUG] Clicked Share/Link action")
-                        else:
-                            # Inline "Check" button click
-                            page.evaluate("""() => {
-                                const cards = Array.from(document.querySelectorAll('div')).filter(d => {
-                                    const hasAction = d.querySelector('div[class*="action"], p[class*="action"], [class*="action"]');
-                                    const t = d.innerText || '';
-                                    return hasAction && t.length < 150 && (t.includes('Share the raffle') || t.includes('Link your Discord') || t.includes('Link and confirm'));
-                                });
-                                const firstPending = cards.find(c => !c.innerText.includes('DONE'));
-                                if (firstPending) {
-                                    const btn = firstPending.querySelector('div[class*="action"], p[class*="action"], [class*="action"]') || firstPending;
-                                    btn.click();
-                                }
-                            }""")
-                            if log:
-                                log(f"[DEBUG] Clicked inline Check button")
-                    except Exception as popup_err:
-                        if log:
-                            log(f"[DEBUG] Click error: {str(popup_err)[:60]}")
-                    
-                    page.wait_for_timeout(1500)
-                
-                # Final check after conditions
-                page.wait_for_timeout(3000)
-                is_joined_final = page.evaluate("""() => document.body.innerText.includes("You're in")""")
-
-                if log:
-                    log(f"[DEBUG] Final check result: {'JOINED!' if is_joined_final else 'NOT JOINED'}")
-
-                if not is_joined_final and log:
-                    # Diagnostic dump: full page text + clickable elements, so we
-                    # can see the site's current join UI instead of guessing it.
-                    try:
-                        full_text = page.evaluate(
-                            "() => (document.body ? document.body.innerText : '')"
-                        ) or ""
-                        full_text = " ".join(full_text.split())
-                        for i in range(0, min(len(full_text), 3000), 500):
-                            log(f"[DUMP] text: {full_text[i:i+500]}")
-                        keys = page.evaluate(
-                            """() => { const t = document.body ? document.body.innerText : ''; """
-                            """return { youre_in: t.includes("You're in"), join: t.includes("Join"), """
-                            """participate: t.includes("Participate"), signin: t.includes("Sign in"), """
-                            """protection: t.includes("protection"), precond: t.toLowerCase().includes("precondition"), """
-                            """share: t.includes("Share"), discord: t.includes("Discord"), """
-                            """done: t.includes("DONE"), check: t.includes("Check") }; }"""
-                        )
-                        log(f"[DUMP] keywords: {keys}")
-                        btns = page.evaluate(
-                            """() => Array.from(document.querySelectorAll('button, a.btn, [role="button"]'))"""
-                            """.map(e => (e.innerText || '').replace(/\\s+/g, ' ').trim()).filter(t => t).slice(0, 30)"""
-                        )
-                        log(f"[DUMP] buttons: {btns}")
-                    except Exception as e:
-                        log(f"[DUMP] failed: {str(e)[:100]}")
-
-                browser.close()
-                
-                if is_joined_final:
-                    if log:
-                        log(f"[OK] JOINED: {segment}")
-                    return {"status": "success", "joined": True}
-                else:
-                    if log:
-                        log(f"[WARN] Conditions completed but not joined: {segment}")
-                    return {"status": "success", "joined": False}
-                    
-        except Exception as e:
-            if log:
-                log(f"[DEBUG] EXCEPTION in check_and_join_giveaway_pw: {str(e)[:150]}")
-                log(f"[PW] Error: {segment}: {e}")
-            return {"status": "error", "message": str(e)}
 
 
     def check_reward_conditions(self, condition, ga_id, log=None):
+        # Real site contract (from its own JS bundle): GET with query params.
         session = self._ensure_session(log)
-        r = session.post(
+        r = session.get(
             f"{API_BASE}/giveaway/check_reward_conditions",
-            json={"condition": condition, "ga_id": ga_id},
+            params={"condition": condition, "ga_id": ga_id},
             timeout=20,
         )
         try:
@@ -677,10 +317,11 @@ class RaffleBot:
             return {"status": "error", "error_message": r.text[:200]}
 
     def get_conditions(self, id_or_code, log=None):
+        # Real site contract: GET with query param.
         session = self._ensure_session(log)
-        r = session.post(
+        r = session.get(
             f"{API_BASE}/giveaway/get_conditions",
-            json={"id_or_code": id_or_code},
+            params={"id_or_code": id_or_code},
             timeout=20,
         )
         try:
@@ -693,6 +334,56 @@ class RaffleBot:
             return r.json()
         except Exception:
             return {"status": "error", "error_message": r.text[:200]}
+
+    def join_giveaway(self, ga_id, log=None):
+        """Join a giveaway by its NUMERIC id (the URL segment 500s).
+        Returns the parsed JSON (contains 'member' on success)."""
+        session = self._ensure_session(log)
+        r = session.post(
+            f"{API_BASE}/giveaway/join_giveaway/{ga_id}",
+            json={},
+            timeout=20,
+        )
+        try:
+            return r.json()
+        except Exception:
+            try:
+                error_text = r.text[:200]
+            except Exception:
+                error_text = f"Failed to parse response (status {r.status_code})"
+            return {"status": "error", "error_message": error_text}
+
+    def check_and_join_giveaway(self, segment, log=None):
+        """API-only join flow (no browser needed):
+        show -> verify each condition -> join by numeric id -> confirm."""
+        def lg(m):
+            if log:
+                log(m)
+        try:
+            show = self.show_giveaway(segment, log)
+        except Exception as e:
+            return {"status": "error", "message": f"show failed: {e}"}
+        g = (show.get("giveaway") if isinstance(show, dict) else None) or {}
+        ga_id = g.get("id")
+        name = g.get("name") or segment
+        if g.get("is_joined"):
+            lg(f"[OK] Deja inscris (API): {name}")
+            return {"status": "success", "already_joined": True}
+        if not ga_id:
+            return {"status": "error", "message": "show fara id numeric"}
+        for cond, info in ((g.get("conditions") or {}).items()):
+            try:
+                res = self.check_reward_conditions(cond, ga_id, log)
+                ok = res.get("verified") or res.get("completed") or res.get("status") == "success"
+                lg(f"[COND] {cond}: {'OK' if ok else res}")
+            except Exception as e:
+                lg(f"[COND] {cond}: eroare {e}")
+        res = self.join_giveaway(ga_id, log)
+        if isinstance(res, dict) and (res.get("member") or res.get("status") == "success"):
+            lg(f"[OK] JOINED: {name} (id {ga_id})")
+            return {"status": "success", "joined": True, "ga_id": ga_id}
+        msg = (res.get("error_message") if isinstance(res, dict) else None) or str(res)[:150]
+        return {"status": "error", "message": msg}
 
     # ── profile / prizes ────────────────────────────────────────────────
 
@@ -848,17 +539,24 @@ class RaffleBot:
                     "Reexporta cookie-urile din browser si reimporta-le.")
                 return "Neautentificat"
 
-            log("[HTML] Se listeaza raflele active de pe site...")
-            data = self.list_active_giveaways_from_html(log)
+            log("[API] Se listeaza raflele active...")
+            try:
+                data = self.list_active_giveaways(log)
+            except Exception as e:
+                log(f"[API] Eroare la listarea raflelor: {e}")
+                return "Eroare"
             giveaways = data.get("giveaways") or []
-            total_info = data.get("total") or {}
-            total = total_info.get("active_total") if isinstance(total_info, dict) else total_info
-            log(f"[HTML] {len(giveaways)} rafle gasite pe pagina ({total} active).")
+            log(f"[API] {len(giveaways)} rafle active gasite.")
 
-            type_map = self._fetch_raffle_types(log)
+            type_map = {}
+            for g in giveaways:
+                segment = g.get("custom_url_segment")
+                dur_days = round(((g.get("time_end") or 0) - (g.get("time_created") or 0)) / 86400)
+                rtype = self._DURATION_DAYS_TO_TYPE.get(dur_days)
+                if segment and rtype:
+                    type_map[segment] = rtype
 
             joined_count = 0
-            skipped_conditions = 0
             already_joined = 0
 
             for g in giveaways:
@@ -870,34 +568,29 @@ class RaffleBot:
 
                     if joined:
                         already_joined += 1
-                        log(f"[OK] Deja inscris: {name} (#{gid})")
+                        log(f"[OK] Deja inscris: {name}")
                         continue
 
-                    log(f"-> Verific {name} (#{segment})...")
-                    
-                    # Folosește DOAR Playwright pentru a verifica și intra în raflă
-                    res = self.check_and_join_giveaway_pw(segment, log)
+                    log(f"-> Verific {name}...")
+
+                    res = self.check_and_join_giveaway(segment, log)
                     status = res.get("status")
-                    
+
                     if status == "success":
                         if res.get("already_joined"):
                             already_joined += 1
-                            log(f"[OK] Deja inscris (PW): {name}")
                         elif res.get("joined"):
                             joined_count += 1
                             rtype = type_map.get(segment)
                             self.db.save_raffle(str(gid), "JOINED", item=name, rtype=rtype)
                             log(f"[JOINED] INTRAT in {name}! (tip {rtype or '?'})")
-                        else:
-                            log(f"[INFO] Join initiat: {name}")
                     else:
                         msg = res.get("message") or "unknown error"
                         log(f"[SKIP] {name}: {msg}")
                 except Exception as e:
                     log(f"Eroare la procesarea raflei: {e}")
 
-            log(f"[API] Gata: {joined_count} noi, {already_joined} deja, "
-                f"{skipped_conditions} cu conditii.")
+            log(f"[API] Gata: {joined_count} noi, {already_joined} deja.")
             return "Gata!"
         except Exception as e:
             log(f"Eroare generala: {e}")
