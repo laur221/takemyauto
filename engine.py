@@ -615,10 +615,37 @@ class RaffleBot:
                 # Final check after conditions
                 page.wait_for_timeout(3000)
                 is_joined_final = page.evaluate("""() => document.body.innerText.includes("You're in")""")
-                
+
                 if log:
                     log(f"[DEBUG] Final check result: {'JOINED!' if is_joined_final else 'NOT JOINED'}")
-                
+
+                if not is_joined_final and log:
+                    # Diagnostic dump: full page text + clickable elements, so we
+                    # can see the site's current join UI instead of guessing it.
+                    try:
+                        full_text = page.evaluate(
+                            "() => (document.body ? document.body.innerText : '')"
+                        ) or ""
+                        full_text = " ".join(full_text.split())
+                        for i in range(0, min(len(full_text), 3000), 500):
+                            log(f"[DUMP] text: {full_text[i:i+500]}")
+                        keys = page.evaluate(
+                            """() => { const t = document.body ? document.body.innerText : ''; """
+                            """return { youre_in: t.includes("You're in"), join: t.includes("Join"), """
+                            """participate: t.includes("Participate"), signin: t.includes("Sign in"), """
+                            """protection: t.includes("protection"), precond: t.toLowerCase().includes("precondition"), """
+                            """share: t.includes("Share"), discord: t.includes("Discord"), """
+                            """done: t.includes("DONE"), check: t.includes("Check") }; }"""
+                        )
+                        log(f"[DUMP] keywords: {keys}")
+                        btns = page.evaluate(
+                            """() => Array.from(document.querySelectorAll('button, a.btn, [role="button"]'))"""
+                            """.map(e => (e.innerText || '').replace(/\\s+/g, ' ').trim()).filter(t => t).slice(0, 30)"""
+                        )
+                        log(f"[DUMP] buttons: {btns}")
+                    except Exception as e:
+                        log(f"[DUMP] failed: {str(e)[:100]}")
+
                 browser.close()
                 
                 if is_joined_final:
