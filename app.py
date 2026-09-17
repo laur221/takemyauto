@@ -16,7 +16,12 @@ db = DBManager()
 bot = RaffleBot(db)
 
 # Check existing session at startup (don't overwrite with hardcoded cookies)
-if db.session_exists():
+if db.pinned_account:
+    if db.session_exists():
+        print(f'[STARTUP] Pinned account {db.pinned_account} found in Redis - will use it')
+    else:
+        print(f'[STARTUP] Pinned account {db.pinned_account} has no session in Redis - QR/import required')
+elif db.session_exists():
     print('[STARTUP] Session found in Redis - will use saved cookies')
 else:
     print('[STARTUP] No session in Redis - QR login required')
@@ -218,7 +223,7 @@ def api_session():
 
 @app.get("/api/accounts")
 def api_accounts():
-    return {"accounts": bot.list_accounts()}
+    return {"accounts": bot.list_accounts(), "pinned": db.pinned_account}
 
 
 @app.post("/api/accounts/switch")
@@ -226,6 +231,11 @@ def api_accounts_switch(req: dict):
     steam_id = req.get("steam_id")
     if not steam_id:
         return JSONResponse({"error": "steam_id necesar"}, status_code=400)
+    if db.pinned_account and steam_id != db.pinned_account:
+        return JSONResponse(
+            {"error": f"Server fixat pe {db.pinned_account} (ACTIVE_STEAM_ID). Schimba env-ul ca sa schimbi contul."},
+            status_code=403,
+        )
     ok = bot.switch_account(steam_id, log=bot_log)
     if not ok:
         return JSONResponse({"error": "Cont necunoscut"}, status_code=404)
@@ -247,6 +257,8 @@ def api_db():
         "redis": db.redis_available,
         "postgres": db.postgres_available,
         "session_in_redis": db.session_exists(),
+        "pinned": db.pinned_account,
+        "active": db.get_active_steam_id(),
     }
 
 

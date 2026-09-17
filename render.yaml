@@ -17,6 +17,14 @@ services:
         value: "1"
       - key: DISPLAY
         value: ":99"
+      - key: ACTIVE_STEAM_ID
+        # Pin this server to one account (SteamID64). Each Render service
+        # gets its own value but they can share the same Redis:
+        #   server 1 -> 76561198842774198 (Fr4me)
+        #   server 2 -> 76561198662673877 (Forever kid)
+        #   server 3 -> 76561198640302648 (kriddtiktok)
+        # Empty = old shared behaviour (session:active key decides).
+        value: ""
     
     # Health check (prevents false "crashed" alerts)
     healthCheckPath: /healthz

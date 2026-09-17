@@ -54,6 +54,13 @@ class DBManager:
         self.postgres_available = False
         self.database_url = None
         self._secret = os.getenv("DB_SECRET", "takemyskins-default-key-2024")
+        # Pin this server instance to a single Steam account.
+        # Set ACTIVE_STEAM_ID=<steam_id64> in Render env so each server
+        # keeps its own account even when they share the same Redis.
+        # Empty / unset = old behaviour (shared session:active key).
+        self.pinned_account = (
+            os.getenv("ACTIVE_STEAM_ID") or os.getenv("ACCOUNT_STEAM_ID") or ""
+        ).strip() or None
 
         self._init_redis()
         self._init_postgres()
@@ -68,6 +75,8 @@ class DBManager:
             modes.append("Redis")
         mode_str = " + ".join(modes) if modes else "Memory"
         print(f"[DB] Mode: {mode_str}")
+        if self.pinned_account:
+            print(f"[DB] Pinned account (ACTIVE_STEAM_ID): {self.pinned_account}")
 
     def _init_redis(self):
         redis_url = os.getenv("REDIS_URL")
@@ -213,8 +222,13 @@ class DBManager:
                 ex=self._SESSION_TTL,
             )
             self.redis_client.hset("session:accounts", steam_id, nickname or steam_id)
-            self.redis_client.set("session:active", steam_id, ex=self._SESSION_TTL)
-            print(f"[DB] Session saved to Redis for {steam_id} (30d)")
+            if self.pinned_account:
+                # Pinned mode: never touch the shared session:active key,
+                # otherwise servers would steal each other's account.
+                print(f"[DB] Session saved to Redis for {steam_id} (30d, pinned mode - session:active untouched)")
+            else:
+                self.redis_client.set("session:active", steam_id, ex=self._SESSION_TTL)
+                print(f"[DB] Session saved to Redis for {steam_id} (30d)")
         except Exception as e:
             print(f"[DB] Session save error: {e}")
 
@@ -222,7 +236,7 @@ class DBManager:
         if not self.redis_available:
             return None
         try:
-            sid = steam_id or self.redis_client.get("session:active")
+            sid = steam_id or self.pinned_account or self.redis_client.get("session:active")
             if not sid:
                 return None
             data = self.redis_client.get(f"session:data:{sid}")
@@ -253,6 +267,9 @@ class DBManager:
                 pass
 
     def get_active_steam_id(self):
+        # Pinned server always reports its env account, ignoring shared key.
+        if self.pinned_account:
+            return self.pinned_account
         if not self.redis_available:
             return None
         try:
@@ -265,7 +282,7 @@ class DBManager:
             return []
         try:
             accounts = self.redis_client.hgetall("session:accounts") or {}
-            active = self.redis_client.get("session:active")
+            active = self.pinned_account or self.redis_client.get("session:active")
             return [
                 {"steam_id": sid, "nickname": nick, "active": sid == active}
                 for sid, nick in accounts.items()
@@ -275,6 +292,12 @@ class DBManager:
             return []
 
     def set_active_account(self, steam_id):
+        # In pinned mode switching is blocked - each server sticks to its env account.
+        if self.pinned_account:
+            if steam_id == self.pinned_account:
+                return True
+            print(f"[DB] Switch blocked: server pinned to {self.pinned_account} (ACTIVE_STEAM_ID)")
+            return False
         if not self.redis_available:
             return False
         try:
@@ -289,7 +312,7 @@ class DBManager:
         if not self.redis_available:
             return False
         try:
-            sid = steam_id or self.redis_client.get("session:active")
+            sid = steam_id or self.pinned_account or self.redis_client.get("session:active")
             if not sid:
                 return False
             return self.redis_client.exists(f"session:data:{sid}") > 0
@@ -300,12 +323,12 @@ class DBManager:
         if not self.redis_available:
             return
         try:
-            sid = steam_id or self.redis_client.get("session:active")
+            sid = steam_id or self.pinned_account or self.redis_client.get("session:active")
             if not sid:
                 return
             self.redis_client.delete(f"session:data:{sid}")
             self.redis_client.hdel("session:accounts", sid)
-            if self.redis_client.get("session:active") == sid:
+            if not self.pinned_account and self.redis_client.get("session:active") == sid:
                 self.redis_client.delete("session:active")
             print(f"[DB] Session cleared for {sid}")
         except Exception as e:
