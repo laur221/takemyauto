@@ -1140,18 +1140,31 @@ class RaffleBot:
                         except Exception:
                             pass
                         try:
-                            clicked = driver.execute_script("""
-                                var btn = document.querySelector(
-                                    '#imageLogin, input[type="submit"][value="Sign In"], '
-                                    + 'input[name="action_sign_in"]');
-                                if (btn) { btn.click(); return 'clicked: ' + (btn.id || btn.name); }
-                                var forms = document.querySelectorAll('form[action*="openid"]');
-                                for (var i = 0; i < forms.length; i++) {
-                                    var sub = forms[i].querySelector('input[type="submit"]');
-                                    if (sub) { sub.click(); return 'form-submit'; }
-                                }
-                                return null;
-                            """)
+                            # A native Selenium click dispatches a real,
+                            # trusted mouse event; a JS-triggered .click()
+                            # (execute_script) reported success here but the
+                            # form never actually submitted - Steam's page
+                            # likely ignores untrusted synthetic clicks.
+                            clicked = None
+                            for sel in ('#imageLogin',
+                                        'input[type="submit"][value="Sign In"]',
+                                        'input[name="action_sign_in"]'):
+                                try:
+                                    el = driver.find_element("css selector", sel)
+                                    if el.is_displayed():
+                                        el.click()
+                                        clicked = f"clicked: {sel}"
+                                        break
+                                except Exception:
+                                    continue
+                            if not clicked:
+                                try:
+                                    form = driver.find_element("css selector", 'form[action*="openid"]')
+                                    submit_btn = form.find_element("css selector", 'input[type="submit"]')
+                                    submit_btn.click()
+                                    clicked = "form-submit"
+                                except Exception:
+                                    pass
                             if clicked:
                                 _log(f"[AUTH] OpenID confirm: {clicked}")
                                 openid_clicked = True
