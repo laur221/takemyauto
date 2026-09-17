@@ -206,6 +206,7 @@ INDEX_HTML = """<!DOCTYPE html>
       <div class="body">
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn b-blue" id="btnqr">Genereaza QR Steam</button>
+          <button class="btn b-gray" id="btnqrregen">⟳ Regenereaza QR</button>
         </div>
         <div class="qrbox" id="qrbox">
           <img id="qrimg" alt="Steam QR">
@@ -446,6 +447,7 @@ async function pollRuntime() {
 }
 
 $("btnqr").addEventListener("click", () => { $("qrmsg").textContent = "Se genereaza QR..."; $("qrmsg").style.color = "var(--cyan)"; post("/api/qr"); });
+$("btnqrregen").addEventListener("click", () => { $("qrmsg").textContent = "Se regenereaza QR..."; $("qrmsg").style.color = "var(--cyan)"; post("/api/qr/regenerate"); });
 $("btncheck").addEventListener("click", () => { post("/api/check"); });
 $("btnrefresh").addEventListener("click", () => { pollWinnings(); setStatus("Statistici actualizate", "var(--green)"); });
 

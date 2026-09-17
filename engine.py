@@ -26,6 +26,10 @@ class RaffleBot:
         self._scheduler_stop_event = threading.Event()
         self._user_id = None
         self._profile_cache = None
+        self._qr_cancel_event = threading.Event()
+
+    def request_qr_cancel(self):
+        self._qr_cancel_event.set()
 
     # ── helpers ──────────────────────────────────────────────────────────
 
@@ -822,6 +826,7 @@ class RaffleBot:
         """One-time Steam login via QR. Retries if Chrome becomes unresponsive.
         After successful login the takemyskins session cookies are saved."""
         _log = log_func or (lambda m: print(m))
+        self._qr_cancel_event.clear()
         if not self._check_lock.acquire(blocking=False):
             _log("[QR] Lock ocupat, astept verificarea curenta...")
             refresh_ui_callback({"status": "waiting", "error": "Astept sa se termine verificarea curenta..."})
@@ -996,6 +1001,8 @@ class RaffleBot:
             login_url = driver.current_url
             _log(f"[AUTH] Astept scanarea ({scan_timeout}s timeout)...")
             for tick in range(scan_timeout):
+                if self._qr_cancel_event.is_set():
+                    raise RuntimeError("QR anulat - se genereaza unul nou.")
                 try:
                     cur_url = driver.current_url
                     if cur_url != login_url and "/login" not in cur_url:
@@ -1086,6 +1093,8 @@ class RaffleBot:
 
             openid_clicked = False
             for openid_wait in range(90):
+                if self._qr_cancel_event.is_set():
+                    raise RuntimeError("QR anulat - se genereaza unul nou.")
                 cur_url = driver.current_url
                 if "steamcommunity.com/openid" in cur_url:
                     if not openid_clicked:

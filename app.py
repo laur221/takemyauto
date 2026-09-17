@@ -138,6 +138,22 @@ def api_qr():
     return {"ok": True}
 
 
+@app.post("/api/qr/regenerate")
+def api_qr_regenerate():
+    """Cancel any in-progress QR attempt (e.g. Steam Guard popup closed by
+    mistake) and start a fresh one."""
+    bot.request_qr_cancel()
+    for _ in range(50):  # up to 5s for the old attempt to unwind
+        if not QR_RUNNING["flag"]:
+            break
+        time.sleep(0.1)
+    QR_RUNNING["flag"] = True
+    with QR_LOCK:
+        QR_STATE.update({"status": "show", "image": None, "message": "Se regenereaza...", "ok": False})
+    threading.Thread(target=run_qr_worker, daemon=True).start()
+    return {"ok": True}
+
+
 @app.get("/api/logs")
 def api_logs(after: int = 0):
     with LOG_LOCK:
