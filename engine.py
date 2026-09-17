@@ -849,17 +849,23 @@ class RaffleBot:
             self._check_lock.release()
 
     def _steam_qr_attempt(self, refresh_ui_callback, _log=None):
-        """Single attempt of the QR login flow. Raises on failure."""
+        """Single attempt of the QR login flow. Raises on failure.
+        Uses a throwaway Chrome profile per attempt - a persistent one would
+        keep Steam logged into whichever account was scanned first, so
+        adding a second account would silently reuse the cached Steam
+        session instead of prompting a fresh QR login."""
+        import shutil
+        import tempfile
         from seleniumbase import Driver
 
         if not _log:
             _log = lambda m: print(m)
 
-        os.makedirs(self.session_dir, exist_ok=True)
+        profile_dir = tempfile.mkdtemp(prefix="tms_qr_")
         _log("[AUTH] Pornesc browser pentru Steam QR login...")
         driver = Driver(
             uc=True,
-            user_data_dir=self.session_dir,
+            user_data_dir=profile_dir,
             headless=True,
             agent=USER_AGENT,
             chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
@@ -1152,3 +1158,4 @@ class RaffleBot:
                     driver.quit()
                 except Exception:
                     pass
+            shutil.rmtree(profile_dir, ignore_errors=True)
