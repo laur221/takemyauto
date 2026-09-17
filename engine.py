@@ -46,6 +46,7 @@ class RaffleBot:
         session.headers.update({
             "User-Agent": USER_AGENT,
             "Accept": "application/json, text/plain, */*",
+            "X-Frontend-Version": FRONTEND_VERSION,
             "X-Requested-With": "XMLHttpRequest",
             "Origin": "https://takemyskins.com",
             "Referer": "https://takemyskins.com/",
@@ -61,18 +62,23 @@ class RaffleBot:
                 )
             except Exception:
                 continue
-        try:
-            r = session.get(f"{API_BASE}/root", timeout=20)
-            token = r.json().get("token")
-            if token:
-                session.headers["X-CSRF-Token"] = token
-            r2 = session.get(f"{API_BASE}/profile/user", timeout=20)
-            user = r2.json().get("user")
-            if user and user.get("steam_id"):
-                return str(user["steam_id"]), user.get("nickname")
-        except Exception as e:
-            if log:
-                log(f"[AUTH] Nu am putut identifica contul: {e}")
+        for attempt in range(3):
+            try:
+                r = session.get(f"{API_BASE}/root", timeout=20)
+                token = r.json().get("token")
+                if token:
+                    session.headers["X-CSRF-Token"] = token
+                r2 = session.get(f"{API_BASE}/profile/user", timeout=20)
+                user = r2.json().get("user")
+                if user and user.get("steam_id"):
+                    return str(user["steam_id"]), user.get("nickname")
+                if log:
+                    log(f"[AUTH] Identificare cont: raspuns fara user (incercarea {attempt + 1}/3)")
+            except Exception as e:
+                if log:
+                    log(f"[AUTH] Nu am putut identifica contul (incercarea {attempt + 1}/3): {e}")
+            if attempt < 2:
+                time.sleep(3)
         return None, None
 
     def save_cookies(self, cookie_list, log=None, steam_id=None, nickname=None):
@@ -1086,7 +1092,17 @@ class RaffleBot:
                     _log(f"[WARN] CDP setCookie eroare: {e}")
 
             _log("[AUTH] Navighez la TakeMySkins login...")
-            driver.get(f"{API_BASE}/login/steam")
+            try:
+                driver.set_page_load_timeout(60)
+                driver.get(f"{API_BASE}/login/steam")
+            except Exception as e:
+                # The redirect chain (takemyskins -> steamcommunity openid ->
+                # back) can outlast the page-load timeout even when the
+                # browser is still fine - poll current_url below instead of
+                # failing the whole attempt.
+                _log(f"[WARN] Navigare lenta, continui cu polling: {e}")
+            finally:
+                driver.set_page_load_timeout(30)
             time.sleep(8)
             cur_url = driver.current_url
             _log(f"[AUTH] URL dupa redirect: {cur_url[:80]}")
@@ -1156,9 +1172,21 @@ class RaffleBot:
                 raise RuntimeError("Login Steam OK, dar TakeMySkins nu a setat sesiunea. "
                                    "Incearca din nou sau logheaza-te manual in browser.")
 
-            steam_id, nickname = self._identity_from_cookies(cookies, _log)
-            self.save_cookies(cookies, steam_id=steam_id, nickname=nickname)
-            label = nickname or steam_id or "cont necunoscut"
+            # Save under a placeholder key first so get_current_user() - the
+            # same proven, retrying call the dashboard already polls - can
+            # load these exact cookies through the normal session-building
+            # path, then re-key once we know the real SteamID.
+            self.save_cookies(cookies, log=_log, steam_id="pending")
+            user = self.get_current_user(log=_log)
+            steam_id = str(user["steam_id"]) if user and user.get("steam_id") else None
+            nickname = user.get("nickname") if user else None
+            if steam_id:
+                self.save_cookies(cookies, log=_log, steam_id=steam_id, nickname=nickname)
+                self.db.clear_session("pending")
+            else:
+                steam_id = "pending"
+                _log("[WARN] Nu am putut identifica contul dupa login; sesiunea a ramas sub cheia temporara.")
+            label = nickname or steam_id
             refresh_ui_callback({"status": "success", "message": f"Sesiune salvata pentru {label}!"})
             _log(f"[OK] Sesiune TakeMySkins salvata cu succes ({label})!")
         finally:
