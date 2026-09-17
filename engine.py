@@ -859,24 +859,28 @@ class RaffleBot:
         finally:
             self._check_lock.release()
 
+    # Steam cookies that carry the logged-in identity - cleared before every
+    # QR attempt so a persistent (trusted) browser profile doesn't silently
+    # reuse whichever account was scanned last.
+    _STEAM_LOGIN_COOKIE_NAMES = {"steamLoginSecure", "steamRememberLogin", "sessionid"}
+
     def _steam_qr_attempt(self, refresh_ui_callback, _log=None):
         """Single attempt of the QR login flow. Raises on failure.
-        Uses a throwaway Chrome profile per attempt - a persistent one would
-        keep Steam logged into whichever account was scanned first, so
-        adding a second account would silently reuse the cached Steam
-        session instead of prompting a fresh QR login."""
-        import shutil
-        import tempfile
+        Reuses the persistent Chrome profile (Steam treats it as a trusted
+        device, which avoids an extra verification step during the OpenID
+        authorize handshake) but scrubs prior Steam login cookies first, so
+        each attempt still forces a fresh QR login instead of silently
+        reusing whichever account was scanned last."""
         from seleniumbase import Driver
 
         if not _log:
             _log = lambda m: print(m)
 
-        profile_dir = tempfile.mkdtemp(prefix="tms_qr_")
+        os.makedirs(self.session_dir, exist_ok=True)
         _log("[AUTH] Pornesc browser pentru Steam QR login...")
         driver = Driver(
             uc=True,
-            user_data_dir=profile_dir,
+            user_data_dir=self.session_dir,
             headless=True,
             agent=USER_AGENT,
             chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,"
@@ -888,6 +892,20 @@ class RaffleBot:
         )
         try:
             driver.set_page_load_timeout(30)
+
+            try:
+                all_cookies = driver.execute_cdp_cmd('Network.getAllCookies', {}).get('cookies', [])
+                cleared = 0
+                for c in all_cookies:
+                    if c.get('name') in self._STEAM_LOGIN_COOKIE_NAMES and 'steam' in (c.get('domain') or ''):
+                        driver.execute_cdp_cmd('Network.deleteCookies', {
+                            'name': c['name'], 'domain': c.get('domain'), 'path': c.get('path', '/'),
+                        })
+                        cleared += 1
+                if cleared:
+                    _log(f"[AUTH] Sters {cleared} cookie-uri Steam vechi din profilul persistent")
+            except Exception as e:
+                _log(f"[WARN] Nu am putut curata cookie-urile Steam vechi: {e}")
 
             # Pre-visit steamcommunity.com to establish first-party cookie context
             # so cross-domain settoken calls can set cookies there
@@ -1195,4 +1213,3 @@ class RaffleBot:
                     driver.quit()
                 except Exception:
                     pass
-            shutil.rmtree(profile_dir, ignore_errors=True)
