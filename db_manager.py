@@ -127,6 +127,7 @@ class DBManager:
                     date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+            cur.execute("ALTER TABLE wins ADD COLUMN IF NOT EXISTS type INTEGER;")
 
             # Steam profile (username + encrypted password)
             cur.execute("""
@@ -312,16 +313,19 @@ class DBManager:
 
     # ---- Raffles/Wins ----
 
-    def save_raffle(self, name, status, item="None"):
+    # raffle type -> TTL in days (1 = daily, 2 = every 3 days, 3 = weekly)
+    RAFFLE_TYPE_TTL_DAYS = {1: 1, 2: 3, 3: 7}
+
+    def save_raffle(self, name, status, item="None", rtype=None):
         if self.postgres_available:
             try:
                 conn = self._get_conn()
                 cur = conn.cursor()
                 cur.execute("""
-                    INSERT INTO wins (raffle_name, status, item_name)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (raffle_name) DO UPDATE SET status = EXCLUDED.status;
-                """, (name, status, item))
+                    INSERT INTO wins (raffle_name, status, item_name, type)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (raffle_name) DO UPDATE SET status = EXCLUDED.status, type = EXCLUDED.type;
+                """, (name, status, item, rtype))
                 conn.commit()
                 cur.close()
                 conn.close()
@@ -330,9 +334,13 @@ class DBManager:
 
         if self.redis_available:
             try:
-                self.redis_client.hset(f"w:{name}", mapping={
-                    "status": status, "item": item
+                key = f"w:{name}"
+                self.redis_client.hset(key, mapping={
+                    "status": status, "item": item, "type": rtype or 0
                 })
+                ttl_days = self.RAFFLE_TYPE_TTL_DAYS.get(rtype)
+                if ttl_days:
+                    self.redis_client.expire(key, 86400 * ttl_days)
             except Exception:
                 pass
 

@@ -683,6 +683,28 @@ class RaffleBot:
             "nickname": user.get("nickname"),
         }
 
+    # ── raffle type classification ──────────────────────────────────────
+    # takemyskins always runs exactly 3 active giveaways: 1-day, 3-day, 7-day.
+    # type: 1 = daily, 2 = every 3 days, 3 = weekly.
+    _DURATION_DAYS_TO_TYPE = {1: 1, 3: 2, 7: 3}
+
+    def _fetch_raffle_types(self, log=None):
+        """segment -> type (1/2/3), derived from time_end - time_created."""
+        try:
+            data = self.list_active_giveaways(log)
+        except Exception as e:
+            if log:
+                log(f"[API] Nu am putut clasifica raflele: {e}")
+            return {}
+        type_map = {}
+        for g in data.get("giveaways") or []:
+            segment = g.get("custom_url_segment")
+            dur_days = round(((g.get("time_end") or 0) - (g.get("time_created") or 0)) / 86400)
+            rtype = self._DURATION_DAYS_TO_TYPE.get(dur_days)
+            if segment and rtype:
+                type_map[segment] = rtype
+        return type_map
+
     # ── main methods ─────────────────────────────────────────────────────
 
     def run_check(self, is_headless=True, log_func=None):
@@ -708,6 +730,8 @@ class RaffleBot:
             total_info = data.get("total") or {}
             total = total_info.get("active_total") if isinstance(total_info, dict) else total_info
             log(f"[HTML] {len(giveaways)} rafle gasite pe pagina ({total} active).")
+
+            type_map = self._fetch_raffle_types(log)
 
             joined_count = 0
             skipped_conditions = 0
@@ -737,8 +761,9 @@ class RaffleBot:
                             log(f"[OK] Deja inscris (PW): {name}")
                         elif res.get("joined"):
                             joined_count += 1
-                            self.db.save_raffle(str(gid), "JOINED", item=name)
-                            log(f"[JOINED] INTRAT in {name}!")
+                            rtype = type_map.get(segment)
+                            self.db.save_raffle(str(gid), "JOINED", item=name, rtype=rtype)
+                            log(f"[JOINED] INTRAT in {name}! (tip {rtype or '?'})")
                         else:
                             log(f"[INFO] Join initiat: {name}")
                     else:
