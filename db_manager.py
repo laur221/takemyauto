@@ -196,49 +196,100 @@ class DBManager:
         u, p = self.get_steam_profile()
         return u is not None and p is not None
 
-    # ---- Session (Redis) ----
+    # ---- Sessions (Redis, keyed by Steam ID - multiple accounts) ----
 
-    def save_session(self, session_data):
+    _SESSION_TTL = 86400 * 30
+
+    def save_session(self, steam_id, session_data, nickname=None):
+        """Upsert the session for one Steam account and mark it active."""
         if not self.redis_available:
             print("[DB] No Redis - session not persisted")
             return
         try:
             self.redis_client.set(
-                "session:takemyskins",
+                f"session:data:{steam_id}",
                 json.dumps(session_data),
-                ex=86400 * 30
+                ex=self._SESSION_TTL,
             )
-            print("[DB] Session saved to Redis (30d)")
+            self.redis_client.hset("session:accounts", steam_id, nickname or steam_id)
+            self.redis_client.set("session:active", steam_id, ex=self._SESSION_TTL)
+            print(f"[DB] Session saved to Redis for {steam_id} (30d)")
         except Exception as e:
             print(f"[DB] Session save error: {e}")
 
-    def get_session(self):
+    def get_session(self, steam_id=None):
         if not self.redis_available:
             return None
         try:
-            data = self.redis_client.get("session:takemyskins")
+            sid = steam_id or self.redis_client.get("session:active")
+            if not sid:
+                return None
+            data = self.redis_client.get(f"session:data:{sid}")
             if data:
-                print("[DB] Session restored from Redis")
+                print(f"[DB] Session restored from Redis for {sid}")
                 return json.loads(data)
         except Exception as e:
             print(f"[DB] Session get error: {e}")
         return None
 
-    def session_exists(self):
+    def get_active_steam_id(self):
+        if not self.redis_available:
+            return None
+        try:
+            return self.redis_client.get("session:active")
+        except Exception:
+            return None
+
+    def list_accounts(self):
+        if not self.redis_available:
+            return []
+        try:
+            accounts = self.redis_client.hgetall("session:accounts") or {}
+            active = self.redis_client.get("session:active")
+            return [
+                {"steam_id": sid, "nickname": nick, "active": sid == active}
+                for sid, nick in accounts.items()
+            ]
+        except Exception as e:
+            print(f"[DB] List accounts error: {e}")
+            return []
+
+    def set_active_account(self, steam_id):
         if not self.redis_available:
             return False
         try:
-            return self.redis_client.exists("session:takemyskins") > 0
+            if self.redis_client.exists(f"session:data:{steam_id}"):
+                self.redis_client.set("session:active", steam_id, ex=self._SESSION_TTL)
+                return True
+        except Exception as e:
+            print(f"[DB] Set active account error: {e}")
+        return False
+
+    def session_exists(self, steam_id=None):
+        if not self.redis_available:
+            return False
+        try:
+            sid = steam_id or self.redis_client.get("session:active")
+            if not sid:
+                return False
+            return self.redis_client.exists(f"session:data:{sid}") > 0
         except Exception:
             return False
 
-    def clear_session(self):
-        if self.redis_available:
-            try:
-                self.redis_client.delete("session:takemyskins")
-                print("[DB] Session cleared")
-            except Exception as e:
-                print(f"[DB] Session clear error: {e}")
+    def clear_session(self, steam_id=None):
+        if not self.redis_available:
+            return
+        try:
+            sid = steam_id or self.redis_client.get("session:active")
+            if not sid:
+                return
+            self.redis_client.delete(f"session:data:{sid}")
+            self.redis_client.hdel("session:accounts", sid)
+            if self.redis_client.get("session:active") == sid:
+                self.redis_client.delete("session:active")
+            print(f"[DB] Session cleared for {sid}")
+        except Exception as e:
+            print(f"[DB] Session clear error: {e}")
 
     # ---- Raffles/Wins ----
 

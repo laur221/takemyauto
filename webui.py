@@ -213,6 +213,7 @@ INDEX_HTML = """<!DOCTYPE html>
         </div>
         <div class="statusline" id="qrmsg"></div>
         <div class="sessline" id="sess">Verific sesiunea...</div>
+        <div id="accounts" style="display:flex;flex-direction:column;gap:6px;"></div>
       </div>
     </div>
 
@@ -407,6 +408,34 @@ async function pollQr() {
   } catch (e) {}
 }
 
+async function pollAccounts() {
+  try {
+    const r = await fetch("/api/accounts");
+    const d = await r.json();
+    const box = $("accounts");
+    if (!d.accounts || !d.accounts.length) { box.innerHTML = ""; return; }
+    box.innerHTML = d.accounts.map(a =>
+      '<div class="sessline" style="justify-content:space-between;">' +
+        '<span>' + (a.active ? '<span class="ok">●</span> ' : '<span style="color:var(--muted);">○</span> ') + esc(a.nickname) + '</span>' +
+        (a.active ? '<span style="color:var(--muted);font-size:11px;">activ</span>' :
+          '<button class="btn b-gray" style="padding:4px 10px;font-size:11px;" onclick="switchAccount(\\'' + esc(a.steam_id) + '\\')">Foloseste</button>') +
+      '</div>'
+    ).join("");
+  } catch (e) {}
+}
+async function switchAccount(steamId) {
+  try {
+    const r = await fetch("/api/accounts/switch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ steam_id: steamId }),
+    });
+    const d = await r.json();
+    if (d.error) { setStatus(d.error, "var(--red)"); return; }
+    pollAccounts(); pollWinnings();
+  } catch (e) {}
+}
+
 async function pollRuntime() {
   try {
     const r = await fetch("/api/runtime");
@@ -423,7 +452,8 @@ setInterval(pollLogs, 1000);
 setInterval(pollWinnings, 30000);
 setInterval(pollQr, 1500);
 setInterval(pollRuntime, 2000);
-pollLogs(); pollWinnings(); pollQr(); pollRuntime();
+setInterval(pollAccounts, 5000);
+pollLogs(); pollWinnings(); pollQr(); pollRuntime(); pollAccounts();
 </script>
 </body>
 </html>

@@ -200,6 +200,22 @@ def api_session():
     return {"logged_in": False}
 
 
+@app.get("/api/accounts")
+def api_accounts():
+    return {"accounts": bot.list_accounts()}
+
+
+@app.post("/api/accounts/switch")
+def api_accounts_switch(req: dict):
+    steam_id = req.get("steam_id")
+    if not steam_id:
+        return JSONResponse({"error": "steam_id necesar"}, status_code=400)
+    ok = bot.switch_account(steam_id, log=bot_log)
+    if not ok:
+        return JSONResponse({"error": "Cont necunoscut"}, status_code=404)
+    return {"ok": True}
+
+
 @app.get("/api/db")
 def api_db():
     return {

@@ -32,30 +32,49 @@ class RaffleBot:
     def _session_file(self):
         return os.path.join(self.session_dir, "tms_cookies.json")
 
-    def save_cookies(self, cookie_list, log=None):
+    @staticmethod
+    def _extract_steam_id(cookie_list):
+        """steamLoginSecure value is "<steamid64>||<token>" (Steam's own account
+        identifier) - used as the DB key so re-logging into the same account
+        overwrites it instead of creating a duplicate."""
+        for c in cookie_list or []:
+            if c.get("name") == "steamLoginSecure":
+                val = c.get("value") or ""
+                for sep in ("%7C%7C", "||"):
+                    if sep in val:
+                        return val.split(sep)[0]
+        return None
+
+    def save_cookies(self, cookie_list, log=None, nickname=None):
         self._http = None
         self._csrf_token = None
         os.makedirs(self.session_dir, exist_ok=True)
+        steam_id = self._extract_steam_id(cookie_list) or "default"
         payload = {
             "cookies": cookie_list,
             "saved_at": time.time(),
+            "steam_id": steam_id,
         }
         with open(self._session_file(), "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
         if log:
-            log("[SESSION] Cookies salvate local")
-        self.db.save_session(payload)
+            log(f"[SESSION] Cookies salvate local (cont {steam_id})")
+        self.db.save_session(steam_id, payload, nickname=nickname)
+        return steam_id
 
     def load_cookies(self, log=None):
         data = None
-        try:
-            if os.path.exists(self._session_file()):
-                with open(self._session_file(), "r", encoding="utf-8") as f:
-                    data = json.load(f)
-        except Exception:
-            data = None
+        active_id = self.db.get_active_steam_id()
+        data = self.db.get_session(active_id)
         if not data:
-            data = self.db.get_session()
+            try:
+                if os.path.exists(self._session_file()):
+                    with open(self._session_file(), "r", encoding="utf-8") as f:
+                        local = json.load(f)
+                    if not active_id or local.get("steam_id") == active_id:
+                        data = local
+            except Exception:
+                data = None
         if not data:
             if log:
                 log("[SESSION] Nu exista cookies salvate")
@@ -122,6 +141,20 @@ class RaffleBot:
         # Always rebuild session to load fresh cookies from Redis
         self._http = self._build_http(log)
         return self._http
+
+    def list_accounts(self):
+        return self.db.list_accounts()
+
+    def switch_account(self, steam_id, log=None):
+        ok = self.db.set_active_account(steam_id)
+        if ok:
+            self._http = None
+            self._csrf_token = None
+            self._user_id = None
+            self._profile_cache = None
+            if log:
+                log(f"[SESSION] Cont activ schimbat: {steam_id}")
+        return ok
 
     # ── API methods ──────────────────────────────────────────────────────
 
@@ -1044,9 +1077,19 @@ class RaffleBot:
                 raise RuntimeError("Login Steam OK, dar TakeMySkins nu a setat sesiunea. "
                                    "Incearca din nou sau logheaza-te manual in browser.")
 
-            self.save_cookies(cookies)
-            refresh_ui_callback({"status": "success", "message": "Sesiune TakeMySkins salvata!"})
-            _log("[OK] Sesiune TakeMySkins salvata cu succes!")
+            steam_id = self.save_cookies(cookies)
+            nickname = None
+            try:
+                user = self.get_current_user(log=_log)
+                if user:
+                    nickname = user.get("nickname")
+                    if nickname:
+                        self.db.save_session(steam_id, self.db.get_session(steam_id), nickname=nickname)
+            except Exception:
+                pass
+            label = nickname or steam_id
+            refresh_ui_callback({"status": "success", "message": f"Sesiune salvata pentru {label}!"})
+            _log(f"[OK] Sesiune TakeMySkins salvata cu succes ({label})!")
         finally:
             if driver:
                 try:
