@@ -19,10 +19,11 @@ Soluția: **Ping-uri periodice cu cron-job.org GRATUIT** previne spin-down
 
 ### Ce se întâmplă?
 
-1. `app.py` pornește un **health server** pe port `PORT + 1` (ex: 8081)
-2. Fiecare **5 minute** (optimizat pentru Render), aplicația se **self-ping-uiește** intern
-3. Aceasta ține viu procesul și **previne spin-down**
-4. Fără ping extern = dyno se suspend → +50 sec delay la următoarea cerere
+1. `app.py` pornește **health serverul** (același proces, port `PORT`)
+2. La fiecare **5 minute**, aplicația își face request HTTP către **URL-ul ei PUBLIC** (`RENDER_EXTERNAL_URL`, injectat automat de Render — fără config manual)
+3. Fiind trafic inbound real prin proxy-ul Render, serviciul **nu mai intră în sleep** și scapi de cold start-ul de 50s+
+
+> ⚠️ Atenție la capcana clasică: ping-ul către `127.0.0.1` (localhost) **NU funcționează** — rămâne în container, routerul Render nu-l vede, iar serviciul adoarme la fel după ~15 min. Întotdeauna ping către URL-ul public.
 
 ### ⚡ Optimizare Critică: Timeout-uri pentru Spin-Up
 

@@ -306,10 +306,22 @@ if __name__ == "__main__":
 
     port = int(os.getenv("PORT", 8080))
 
-    SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", 600))
+    SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", 300))
+    # IMPORTANT: ping-ul trebuie sa iasa prin URL-ul PUBLIC (prin proxy-ul
+    # Render), altfel routerul nu vede trafic inbound si serviciul intra
+    # in sleep dupa ~15 min (cold start 50s+). Ping-ul catre 127.0.0.1
+    # ramane in container si NU previne spin-down-ul.
+    # RENDER_EXTERNAL_URL e injectat automat de Render, fara config manual.
+    public_base = (
+        os.getenv("RENDER_EXTERNAL_URL")
+        or os.getenv("PUBLIC_URL")
+        or f"http://127.0.0.1:{port}"
+    ).rstrip("/")
+    self_ping_url = f"{public_base}/healthz"
+    print(f"[KEEP-ALIVE] Self-ping target: {self_ping_url} la fiecare {SELF_PING_INTERVAL}s")
     threading.Thread(
         target=keep_alive_self_ping,
-        args=(f"http://127.0.0.1:{port}/healthz", SELF_PING_INTERVAL),
+        args=(self_ping_url, SELF_PING_INTERVAL),
         daemon=True,
     ).start()
 
