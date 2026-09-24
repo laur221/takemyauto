@@ -132,6 +132,15 @@ def api_check():
     return {"ok": True}
 
 
+# GET alias pentru cron-job.org (plan gratuit): trezeste serviciul din
+# sleep (cold start ~50s, acceptabil pentru job de fundal) si ruleaza
+# o verificare completa, apoi serviciul adoarme la loc. Asa consumi
+# ~minute/luna in loc de 720h/luna cu scheduler intern + self-ping.
+@app.get("/api/check-now")
+def api_check_now():
+    return api_check()
+
+
 @app.post("/api/qr")
 def api_qr():
     if QR_RUNNING["flag"]:
@@ -306,32 +315,44 @@ if __name__ == "__main__":
 
     port = int(os.getenv("PORT", 8080))
 
-    SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", 300))
-    # IMPORTANT: ping-ul trebuie sa iasa prin URL-ul PUBLIC (prin proxy-ul
-    # Render), altfel routerul nu vede trafic inbound si serviciul intra
-    # in sleep dupa ~15 min (cold start 50s+). Ping-ul catre 127.0.0.1
-    # ramane in container si NU previne spin-down-ul.
-    # RENDER_EXTERNAL_URL e injectat automat de Render, fara config manual.
-    public_base = (
-        os.getenv("RENDER_EXTERNAL_URL")
-        or os.getenv("PUBLIC_URL")
-        or f"http://127.0.0.1:{port}"
-    ).rstrip("/")
-    self_ping_url = f"{public_base}/healthz"
-    print(f"[KEEP-ALIVE] Self-ping target: {self_ping_url} la fiecare {SELF_PING_INTERVAL}s")
-    threading.Thread(
-        target=keep_alive_self_ping,
-        args=(self_ping_url, SELF_PING_INTERVAL),
-        daemon=True,
-    ).start()
+    SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", 0))
+    # 0 = oprit (default): pe planul gratuit orele (750h/luna) se termina
+    # daca serviciul sta treaz non-stop. Verificarile sunt declansate
+    # extern prin GET /api/check-now (cron-job.org), iar intre rulari
+    # serviciul doarme linistit. Pune >0 doar daca vrei keep-alive clasic.
+    if SELF_PING_INTERVAL > 0:
+        # IMPORTANT: ping-ul trebuie sa iasa prin URL-ul PUBLIC (prin
+        # proxy-ul Render), altfel routerul nu vede trafic inbound si
+        # serviciul intra in sleep dupa ~15 min. Ping-ul catre 127.0.0.1
+        # ramane in container si NU previne spin-down-ul.
+        # RENDER_EXTERNAL_URL e injectat automat de Render, fara config.
+        public_base = (
+            os.getenv("RENDER_EXTERNAL_URL")
+            or os.getenv("PUBLIC_URL")
+            or f"http://127.0.0.1:{port}"
+        ).rstrip("/")
+        self_ping_url = f"{public_base}/healthz"
+        print(f"[KEEP-ALIVE] Self-ping target: {self_ping_url} la fiecare {SELF_PING_INTERVAL}s")
+        threading.Thread(
+            target=keep_alive_self_ping,
+            args=(self_ping_url, SELF_PING_INTERVAL),
+            daemon=True,
+        ).start()
+    else:
+        print("[KEEP-ALIVE] Self-ping OPRIT (sleep-friendly: trezire via /api/check-now).")
 
     SCHEDULER_DELAY = int(os.getenv("SCHEDULER_DELAY", 120))
-    SCHEDULER_INTERVAL = int(os.getenv("SCHEDULER_INTERVAL", 21600))
-    threading.Thread(
-        target=delayed_scheduler_start,
-        args=(bot, SCHEDULER_DELAY, SCHEDULER_INTERVAL),
-        daemon=True,
-    ).start()
+    SCHEDULER_INTERVAL = int(os.getenv("SCHEDULER_INTERVAL", 0))
+    # 0 = oprit (default): scheduler-ul intern tine procesul treaz 24/7
+    # (~720h/luna). Foloseste cron-job.org -> GET /api/check-now.
+    if SCHEDULER_INTERVAL > 0:
+        threading.Thread(
+            target=delayed_scheduler_start,
+            args=(bot, SCHEDULER_DELAY, SCHEDULER_INTERVAL),
+            daemon=True,
+        ).start()
+    else:
+        print("[SCHEDULER] Scheduler intern OPRIT (sleep-friendly: trezire via /api/check-now).")
 
     print(f"Web UI starting on 0.0.0.0:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

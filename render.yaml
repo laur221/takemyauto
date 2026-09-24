@@ -10,9 +10,10 @@ services:
       - key: PORT
         value: 8080
       - key: SELF_PING_INTERVAL
-        value: 300  # 5 minutes - ping prin URL public, previne spin-down
+        value: 0  # 0 = oprit (sleep-friendly). Orele free (750h/luna) nu ajung
+                  # daca serviciul sta treaz non-stop. Trezire via cron-job.org.
       - key: SCHEDULER_INTERVAL
-        value: 21600  # 6 hours - raffle check interval
+        value: 0  # 0 = scheduler intern oprit. Verificari via GET /api/check-now
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: DISPLAY
